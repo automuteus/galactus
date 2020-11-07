@@ -32,7 +32,7 @@ func refreshConnectCodeLiveness(client *redis.Client, code string) {
 
 func getActiveGames(client *redis.Client) int64 {
 	now := time.Now()
-	before := now.Add(-time.Hour)
+	before := now.Add(-(time.Second * 600))
 	count, err := client.ZCount(ctx, activeGamesCode(), fmt.Sprintf("%d", before.Unix()), fmt.Sprintf("%d", now.Unix())).Result()
 	if err != nil {
 		log.Println(err)
@@ -180,8 +180,12 @@ func (broker *Broker) Start(port string) {
 		broker.connectionsLock.RUnlock()
 
 		activeGames := getActiveGames(broker.client)
+		version := getVersion(broker.client)
+		totalGuilds := getGuildCounter(broker.client, version)
 
 		data := map[string]interface{}{
+			"version":           version,
+			"totalGuilds":       totalGuilds,
 			"activeConnections": activeConns,
 			"activeGames":       activeGames,
 		}
@@ -195,6 +199,31 @@ func (broker *Broker) Start(port string) {
 
 	log.Printf("Message broker is running on port %s...\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, router))
+}
+
+func totalGuildsKey(version string) string {
+	return "automuteus:count:guilds:version-" + version
+}
+
+func versionKey() string {
+	return "automuteus:version"
+}
+
+func getVersion(client *redis.Client) string {
+	v, err := client.Get(ctx, versionKey()).Result()
+	if err != nil {
+		log.Println(err)
+	}
+	return v
+}
+
+func getGuildCounter(client *redis.Client, version string) int64 {
+	count, err := client.SCard(ctx, totalGuildsKey(version)).Result()
+	if err != nil {
+		log.Println(err)
+		return 0
+	}
+	return count
 }
 
 //anytime a bot "acks", then push a notification
