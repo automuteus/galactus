@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/automuteus/galactus/broker"
 	"github.com/automuteus/galactus/galactus"
 	"log"
 	"os"
@@ -9,7 +10,8 @@ import (
 	"syscall"
 )
 
-const DefaultPort = "5858"
+const DefaultGalactusPort = "5858"
+const DefaultBrokerPort = "8123"
 
 func main() {
 	redisAddr := os.Getenv("REDIS_ADDRESS")
@@ -17,11 +19,17 @@ func main() {
 		log.Fatal("No REDIS_ADDRESS specified. Exiting.")
 	}
 
-	port := os.Getenv("GALACTUS_PORT")
-	if port == "" {
-		log.Println("No GALACTUS_PORT provided. Defaulting to " + DefaultPort)
-		port = DefaultPort
+	galactusPort := os.Getenv("GALACTUS_PORT")
+	if galactusPort == "" {
+		log.Println("No GALACTUS_PORT provided. Defaulting to " + DefaultGalactusPort)
+		galactusPort = DefaultGalactusPort
 	}
+	brokerPort := os.Getenv("BROKER_PORT")
+	if brokerPort == "" {
+		log.Println("No BROKER_PORT provided. Defaulting to " + DefaultBrokerPort)
+		brokerPort = DefaultBrokerPort
+	}
+
 	redisUser := os.Getenv("REDIS_USER")
 	redisPass := os.Getenv("REDIS_PASS")
 	if redisUser != "" {
@@ -44,11 +52,15 @@ func main() {
 	}
 
 	tp := galactus.NewTokenProvider(redisAddr, redisUser, redisPass, int(num))
+	tp.PopulateAndStartSessions()
+	msgBroker := broker.NewBroker(redisAddr, redisUser, redisPass)
 
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
 
-	go tp.Run(port)
+	go msgBroker.Start(brokerPort)
+
+	go tp.Run(galactusPort)
 	<-sc
 	tp.Close()
 }
