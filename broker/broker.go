@@ -30,17 +30,6 @@ func refreshConnectCodeLiveness(client *redis.Client, code string) {
 	})
 }
 
-func getActiveGames(client *redis.Client) int64 {
-	now := time.Now()
-	before := now.Add(-(time.Second * 600))
-	count, err := client.ZCount(ctx, activeGamesCode(), fmt.Sprintf("%d", before.Unix()), fmt.Sprintf("%d", now.Unix())).Result()
-	if err != nil {
-		log.Println(err)
-		return 0
-	}
-	return count
-}
-
 type Broker struct {
 	client *redis.Client
 
@@ -179,9 +168,9 @@ func (broker *Broker) Start(port string) {
 		activeConns := len(broker.connections)
 		broker.connectionsLock.RUnlock()
 
-		activeGames := getActiveGames(broker.client)
-		version := getVersion(broker.client)
-		totalGuilds := getGuildCounter(broker.client, version)
+		activeGames := GetActiveGames(broker.client)
+		version := GetVersion(broker.client)
+		totalGuilds := GetGuildCounter(broker.client, version)
 
 		data := map[string]interface{}{
 			"version":           version,
@@ -209,7 +198,7 @@ func versionKey() string {
 	return "automuteus:version"
 }
 
-func getVersion(client *redis.Client) string {
+func GetVersion(client *redis.Client) string {
 	v, err := client.Get(ctx, versionKey()).Result()
 	if err != nil {
 		log.Println(err)
@@ -217,8 +206,19 @@ func getVersion(client *redis.Client) string {
 	return v
 }
 
-func getGuildCounter(client *redis.Client, version string) int64 {
+func GetGuildCounter(client *redis.Client, version string) int64 {
 	count, err := client.SCard(ctx, totalGuildsKey(version)).Result()
+	if err != nil {
+		log.Println(err)
+		return 0
+	}
+	return count
+}
+
+func GetActiveGames(client *redis.Client) int64 {
+	now := time.Now()
+	before := now.Add(-(time.Second * 600))
+	count, err := client.ZCount(ctx, activeGamesCode(), fmt.Sprintf("%d", before.Unix()), fmt.Sprintf("%d", now.Unix())).Result()
 	if err != nil {
 		log.Println(err)
 		return 0

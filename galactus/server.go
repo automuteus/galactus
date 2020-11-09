@@ -80,7 +80,7 @@ type NoNickPatchParams struct {
 func (tokenProvider *TokenProvider) Run(port string) {
 	r := mux.NewRouter()
 
-	r.HandleFunc("/v1/changestate/{guildID}/{userID}", func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc("/changestate/{guildID}/{userID}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		guildID := vars["guildID"]
 		userID := vars["userID"]
@@ -123,7 +123,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		}
 	}).Methods("POST")
 
-	r.HandleFunc("/v1/addtoken", func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc("/addtoken", func(w http.ResponseWriter, r *http.Request) {
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
 			log.Println(err)
