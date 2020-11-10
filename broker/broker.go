@@ -169,11 +169,12 @@ func (broker *Broker) Start(port string) {
 		broker.connectionsLock.RUnlock()
 
 		activeGames := GetActiveGames(broker.client)
-		version := GetVersion(broker.client)
+		version, commit := GetVersionAndCommit(broker.client)
 		totalGuilds := GetGuildCounter(broker.client, version)
 
 		data := map[string]interface{}{
 			"version":           version,
+			"commit":            commit,
 			"totalGuilds":       totalGuilds,
 			"activeConnections": activeConns,
 			"activeGames":       activeGames,
@@ -194,16 +195,25 @@ func totalGuildsKey(version string) string {
 	return "automuteus:count:guilds:version-" + version
 }
 
+//TODO these are duplicated in the main repo and here! Eek!
 func versionKey() string {
 	return "automuteus:version"
 }
 
-func GetVersion(client *redis.Client) string {
+func commitKey() string {
+	return "automuteus:commit"
+}
+
+func GetVersionAndCommit(client *redis.Client) (string, string) {
 	v, err := client.Get(ctx, versionKey()).Result()
 	if err != nil {
 		log.Println(err)
 	}
-	return v
+	c, err := client.Get(ctx, commitKey()).Result()
+	if err != nil {
+		log.Println(err)
+	}
+	return v, c
 }
 
 func GetGuildCounter(client *redis.Client, version string) int64 {
