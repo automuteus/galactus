@@ -14,9 +14,9 @@ const DefaultGalactusPort = "5858"
 const DefaultBrokerPort = "8123"
 
 func main() {
-	redisAddr := os.Getenv("REDIS_ADDRESS")
+	redisAddr := os.Getenv("REDIS_ADDR")
 	if redisAddr == "" {
-		log.Fatal("No REDIS_ADDRESS specified. Exiting.")
+		log.Fatal("No REDIS_ADDR specified. Exiting.")
 	}
 
 	galactusPort := os.Getenv("GALACTUS_PORT")
