@@ -22,14 +22,6 @@ func activeGamesCode() string {
 	return "automuteus:games"
 }
 
-func refreshConnectCodeLiveness(client *redis.Client, code string) {
-	t := time.Now().Unix()
-	client.ZAdd(ctx, activeGamesCode(), &redis.Z{
-		Score:  float64(t),
-		Member: code,
-	})
-}
-
 type Broker struct {
 	client *redis.Client
 
@@ -77,8 +69,6 @@ func (broker *Broker) Start(port string) {
 			broker.ackKillChannels[s.ID()] = killChannel
 			broker.connectionsLock.Unlock()
 
-			refreshConnectCodeLiveness(broker.client, msg)
-
 			err := PushJob(ctx, broker.client, msg, Connection, "true")
 			if err != nil {
 				log.Println(err)
@@ -92,8 +82,6 @@ func (broker *Broker) Start(port string) {
 
 		broker.connectionsLock.RLock()
 		if cCode, ok := broker.connections[s.ID()]; ok {
-			refreshConnectCodeLiveness(broker.client, cCode)
-
 			err := PushJob(ctx, broker.client, cCode, Lobby, msg)
 			if err != nil {
 				log.Println(err)
@@ -110,8 +98,6 @@ func (broker *Broker) Start(port string) {
 		} else {
 			broker.connectionsLock.RLock()
 			if cCode, ok := broker.connections[s.ID()]; ok {
-				refreshConnectCodeLiveness(broker.client, cCode)
-
 				err := PushJob(ctx, broker.client, cCode, State, msg)
 				if err != nil {
 					log.Println(err)
@@ -125,8 +111,6 @@ func (broker *Broker) Start(port string) {
 
 		broker.connectionsLock.RLock()
 		if cCode, ok := broker.connections[s.ID()]; ok {
-			refreshConnectCodeLiveness(broker.client, cCode)
-
 			err := PushJob(ctx, broker.client, cCode, Player, msg)
 			if err != nil {
 				log.Println(err)
