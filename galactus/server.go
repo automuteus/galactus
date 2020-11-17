@@ -5,19 +5,23 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/automuteus/galactus/discord"
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
 	"io/ioutil"
 	"log"
 	"net/http"
+	"strconv"
 	"sync"
+	"time"
 )
 
 var ctx = context.Background()
 
 type TokenProvider struct {
-	client *redis.Client
+	client         *redis.Client
+	primarySession *discordgo.Session
 
 	//maps hashed tokens to active discord sessions
 	activeSessions map[string]*discordgo.Session
@@ -32,15 +36,25 @@ func allTokensKey() string {
 	return "automuteus:tokens"
 }
 
-func NewTokenProvider(redisAddr, redisUser, redisPass string, redisDB int) *TokenProvider {
+func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string) *TokenProvider {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
 		Username: redisUser,
 		Password: redisPass,
-		DB:       redisDB, // use default DB
+		DB:       0, // use default DB
 	})
+	dg, err := discordgo.New("Bot " + botToken)
+	if err != nil {
+		log.Fatal(err)
+	}
+	err = dg.Open()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	return &TokenProvider{
 		client:         rdb,
+		primarySession: dg,
 		activeSessions: make(map[string]*discordgo.Session),
 		sessionLock:    sync.RWMutex{},
 	}
@@ -72,55 +86,81 @@ func (tokenProvider *TokenProvider) PopulateAndStartSessions() {
 	}
 }
 
-type NoNickPatchParams struct {
-	Deaf bool `json:"deaf"`
-	Mute bool `json:"mute"`
-}
-
 func (tokenProvider *TokenProvider) Run(port string) {
 	r := mux.NewRouter()
 
-	r.HandleFunc("/changestate/{guildID}/{userID}", func(w http.ResponseWriter, r *http.Request) {
+	// /modify/guild/conncode/userid?mute=true?deaf=false
+	r.HandleFunc("/modify/{guildID}/{connectCode}/{userID}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		guildID := vars["guildID"]
 		userID := vars["userID"]
+		connectCode := vars["connectCode"]
+		m := r.URL.Query().Get("mute")
+		d := r.URL.Query().Get("deaf")
+		gid, gerr := strconv.ParseInt(guildID, 10, 64)
+		uid, uerr := strconv.ParseInt(userID, 10, 64)
+		if m == "" || d == "" || gerr != nil || uerr != nil {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Invalid values or parameters received. Query should be of the form `/modify/<guildID>/<conncode>/<userID>?mute=true?deaf=false`"))
+			return
+		}
 
-		body, err := ioutil.ReadAll(r.Body)
+		//TODO try secondary bots here first
+
+		task := discord.NewModifyTask(gid, uid, discord.NoNickPatchParams{
+			Deaf: d == "true" || d == "t",
+			Mute: m == "true" || m == "t",
+		})
+		jBytes, err := json.Marshal(task)
 		if err != nil {
 			log.Println(err)
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(err.Error()))
+			w.Write([]byte("Unable to marshal JSON into Task"))
 			return
-		}
-		defer r.Body.Close()
+		} else {
+			acked := make(chan bool)
+			pubsub := tokenProvider.client.Subscribe(context.Background(), discord.BroadcastTaskAckKey(task.TaskID))
+			go tokenProvider.waitForAck(pubsub, time.Second, acked)
 
-		pParams := NoNickPatchParams{}
-		err = json.Unmarshal(body, &pParams)
-		if err != nil {
-			log.Println(err)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(err.Error()))
-			return
-		}
-
-		tokensKey := guildTokensKey(guildID)
-		hashedToken, err := tokenProvider.client.SRandMember(ctx, tokensKey).Result()
-		if err != nil {
-			log.Println(err)
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(err.Error()))
-			return
-		}
-
-		if sess, ok := tokenProvider.activeSessions[hashedToken]; ok {
-			log.Printf("Issuing update request to discord for UserID %s with mute=%v deaf=%v\n", userID, pParams.Mute, pParams.Deaf)
-
-			_, err := sess.RequestWithBucketID("PATCH", discordgo.EndpointGuildMember(guildID, userID), pParams, discordgo.EndpointGuildMember(guildID, ""))
+			err := tokenProvider.client.Publish(context.Background(), discord.TasksSubscribeKey(connectCode), jBytes).Err()
 			if err != nil {
 				log.Println(err)
-				//guildMemberUpdateNoNick(s, params)
+			}
+
+			res := <-acked
+			if !res {
+				log.Println("Request timed out waiting for broadcast to capture clients for task " + task.TaskID)
+				//falls through to using official bot token below
+			} else {
+				acked := make(chan bool)
+				pubsub := tokenProvider.client.Subscribe(context.Background(), discord.CompleteTaskAckKey(task.TaskID))
+				go tokenProvider.waitForAck(pubsub, time.Second*2, acked)
+				res := <-acked
+				if res {
+					//hooray! we did the mute with a client token!
+					w.WriteHeader(http.StatusOK)
+					return
+				} else {
+					log.Println("No ack from client capture bot for task " + task.TaskID)
+					//falls through to using official bot token below
+				}
 			}
 		}
+		log.Printf("Applying mute=%v, deaf=%v using primary bot\n", m, d)
+		discord.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userID, m == "true" || m == "t", d == "true" || d == "t")
+
+		//tokensKey := guildTokensKey(guildID)
+		//hashedToken, err := tokenProvider.client.SRandMember(ctx, tokensKey).Result()
+		//if err != nil {
+		//	log.Println(err)
+		//	w.WriteHeader(http.StatusInternalServerError)
+		//	w.Write([]byte(err.Error()))
+		//	return
+		//}
+		//
+		//if sess, ok := tokenProvider.activeSessions[hashedToken]; ok {
+		//
+		//}
 	}).Methods("POST")
 
 	r.HandleFunc("/addtoken", func(w http.ResponseWriter, r *http.Request) {
@@ -184,6 +224,22 @@ func (tokenProvider *TokenProvider) Run(port string) {
 	http.ListenAndServe(":"+port, r)
 }
 
+func (tokenProvider *TokenProvider) waitForAck(pubsub *redis.PubSub, waitTime time.Duration, result chan<- bool) {
+	t := time.NewTimer(waitTime)
+	defer pubsub.Close()
+
+	for {
+		select {
+		case <-t.C:
+			result <- false
+			return
+		case <-pubsub.Channel():
+			result <- true
+			return
+		}
+	}
+}
+
 func hashToken(token string) string {
 	h := sha256.New()
 	h.Sum([]byte(token))
@@ -198,6 +254,7 @@ func (tokenProvider *TokenProvider) Close() {
 
 	tokenProvider.activeSessions = map[string]*discordgo.Session{}
 	tokenProvider.sessionLock.Unlock()
+	tokenProvider.primarySession.Close()
 }
 
 func (tokenProvider *TokenProvider) newGuild() func(s *discordgo.Session, m *discordgo.GuildCreate) {

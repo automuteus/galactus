@@ -6,7 +6,6 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strconv"
 	"syscall"
 )
 
@@ -14,6 +13,11 @@ const DefaultGalactusPort = "5858"
 const DefaultBrokerPort = "8123"
 
 func main() {
+	botToken := os.Getenv("DISCORD_BOT_TOKEN")
+	if botToken == "" {
+		log.Fatal("No DISCORD_BOT_TOKEN specified. Exiting.")
+	}
+
 	redisAddr := os.Getenv("REDIS_ADDR")
 	if redisAddr == "" {
 		log.Fatal("No REDIS_ADDR specified. Exiting.")
@@ -44,14 +48,7 @@ func main() {
 		log.Println("No REDIS_PASS specified.")
 	}
 
-	redisDB := os.Getenv("REDIS_DB")
-	num, err := strconv.ParseInt(redisDB, 10, 64)
-	if err != nil {
-		log.Println("Invalid REDIS_DB provided. Defaulting to 0")
-		num = 0
-	}
-
-	tp := galactus.NewTokenProvider(redisAddr, redisUser, redisPass, int(num))
+	tp := galactus.NewTokenProvider(botToken, redisAddr, redisUser, redisPass)
 	tp.PopulateAndStartSessions()
 	msgBroker := broker.NewBroker(redisAddr, redisUser, redisPass)
 
