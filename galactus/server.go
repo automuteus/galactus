@@ -17,6 +17,9 @@ import (
 	"time"
 )
 
+const BroadcastToClientCapturesTimeout = time.Millisecond * 200
+const AckFromClientCapturesTimeout = time.Second
+
 var ctx = context.Background()
 
 type TokenProvider struct {
@@ -36,6 +39,11 @@ func allTokensKey() string {
 	return "automuteus:tokens"
 }
 
+func guildTokenLock(guildID, hToken string) string {
+	return "automuteus:lock:" + hToken + ":" + guildID
+}
+
+//TODO Galactus needs to update the Node ratelimiting info in Redis!!! Needs the node ID
 func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string) *TokenProvider {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
@@ -68,22 +76,82 @@ func (tokenProvider *TokenProvider) PopulateAndStartSessions() {
 	}
 
 	for _, v := range keys {
-		k := hashToken(v)
-		if _, ok := tokenProvider.activeSessions[k]; !ok {
-			sess, err := discordgo.New("Bot " + v)
-			if err != nil {
-				log.Println(err)
-				continue
+		tokenProvider.openAndStartSessionWithToken(v)
+	}
+}
+
+func (tokenProvider *TokenProvider) openAndStartSessionWithToken(token string) bool {
+	k := hashToken(token)
+	tokenProvider.sessionLock.Lock()
+	defer tokenProvider.sessionLock.Unlock()
+
+	if _, ok := tokenProvider.activeSessions[k]; !ok {
+		sess, err := discordgo.New("Bot " + token)
+		if err != nil {
+			log.Println(err)
+			return false
+		}
+		err = sess.Open()
+		if err != nil {
+			log.Println(err)
+			return false
+		}
+		//associates the guilds with this token to be used for requests
+		sess.AddHandler(tokenProvider.newGuild())
+		log.Println("Opened session on startup for " + k)
+		tokenProvider.activeSessions[k] = sess
+		return true
+	}
+	return false
+}
+
+func (tokenProvider *TokenProvider) getAnySession(guildID string) (*discordgo.Session, string) {
+	hTokens, err := tokenProvider.client.SMembers(context.Background(), guildTokensKey(guildID)).Result()
+	if err != nil {
+		return nil, ""
+	}
+
+	tokenProvider.sessionLock.RLock()
+	defer tokenProvider.sessionLock.RUnlock()
+
+	for _, hToken := range hTokens {
+		//if this token isn't potentially rate-limited
+		if tokenProvider.CanUseGuildTokenCombo(guildID, hToken) {
+			if sess, ok := tokenProvider.activeSessions[hToken]; ok {
+				return sess, hToken
+			} else {
+				//remove this key from our records and keep going
+				tokenProvider.client.SRem(context.Background(), guildTokensKey(guildID), hToken)
 			}
-			err = sess.Open()
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-			log.Println("Opened session on startup for " + k)
-			tokenProvider.activeSessions[k] = sess
+		} else {
+			log.Println("Secondary token is potentially rate-limited. Skipping")
 		}
 	}
+
+	return nil, ""
+}
+
+func (tokenProvider *TokenProvider) IncrGuildTokenComboLock(guildID, hashToken string) {
+	v := int64(0)
+	vStr, _ := tokenProvider.client.Get(context.Background(), guildTokenLock(guildID, hashToken)).Result()
+	v, _ = strconv.ParseInt(vStr, 10, 64)
+	v++
+
+	//5 second TTL
+	tokenProvider.client.Set(context.Background(), guildTokenLock(guildID, hashToken), v, time.Second*5)
+}
+
+func (tokenProvider *TokenProvider) CanUseGuildTokenCombo(guildID, hashToken string) bool {
+	res, err := tokenProvider.client.Get(context.Background(), guildTokenLock(guildID, hashToken)).Result()
+	if err != nil {
+		return true
+	}
+	i, err := strconv.ParseInt(res, 10, 64)
+	if err != nil {
+		return true
+	}
+
+	return i < 5
 }
 
 func (tokenProvider *TokenProvider) Run(port string) {
@@ -105,62 +173,76 @@ func (tokenProvider *TokenProvider) Run(port string) {
 			return
 		}
 
-		//TODO try secondary bots here first
-
-		task := discord.NewModifyTask(gid, uid, discord.NoNickPatchParams{
-			Deaf: d == "true" || d == "t",
-			Mute: m == "true" || m == "t",
-		})
-		jBytes, err := json.Marshal(task)
-		if err != nil {
-			log.Println(err)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Unable to marshal JSON into Task"))
-			return
+		sess, hToken := tokenProvider.getAnySession(guildID)
+		if sess != nil {
+			err := discord.ApplyMuteDeaf(sess, guildID, userID, m == "true" || m == "t", d == "true" || d == "t")
+			if err == nil {
+				tokenProvider.IncrGuildTokenComboLock(guildID, hToken)
+				log.Printf("Successfully applied mute=%v, deaf=%v using secondary bot\n", m, d)
+				w.WriteHeader(http.StatusOK)
+				return
+			}
 		} else {
-			acked := make(chan bool)
-			pubsub := tokenProvider.client.Subscribe(context.Background(), discord.BroadcastTaskAckKey(task.TaskID))
-			go tokenProvider.waitForAck(pubsub, time.Second, acked)
+			log.Println("No secondary bot tokens found. Trying other methods")
+		}
 
-			err := tokenProvider.client.Publish(context.Background(), discord.TasksSubscribeKey(connectCode), jBytes).Err()
+		//this is cheeky, but use the connect code as part of the lock; don't issue too many requests on the capture client w/ this code
+		if tokenProvider.CanUseGuildTokenCombo(guildID, connectCode) {
+			//if the secondary token didn't work, then next we try the client-side capture request
+			task := discord.NewModifyTask(gid, uid, discord.NoNickPatchParams{
+				Deaf: d == "true" || d == "t",
+				Mute: m == "true" || m == "t",
+			})
+			jBytes, err := json.Marshal(task)
 			if err != nil {
 				log.Println(err)
-			}
-
-			res := <-acked
-			if !res {
-				log.Println("Request timed out waiting for broadcast to capture clients for task " + task.TaskID)
-				//falls through to using official bot token below
+				w.WriteHeader(http.StatusBadRequest)
+				w.Write([]byte("Unable to marshal JSON into Task"))
+				return
 			} else {
 				acked := make(chan bool)
-				pubsub := tokenProvider.client.Subscribe(context.Background(), discord.CompleteTaskAckKey(task.TaskID))
-				go tokenProvider.waitForAck(pubsub, time.Second*2, acked)
+				pubsub := tokenProvider.client.Subscribe(context.Background(), discord.BroadcastTaskAckKey(task.TaskID))
+				go tokenProvider.waitForAck(pubsub, BroadcastToClientCapturesTimeout, acked)
+
+				err := tokenProvider.client.Publish(context.Background(), discord.TasksSubscribeKey(connectCode), jBytes).Err()
+				if err != nil {
+					log.Println(err)
+				}
+
 				res := <-acked
-				if res {
-					//hooray! we did the mute with a client token!
-					w.WriteHeader(http.StatusOK)
-					return
-				} else {
-					log.Println("No ack from client capture bot for task " + task.TaskID)
+				if !res {
+					log.Println("Request timed out waiting for broadcast to capture clients for task " + task.TaskID)
 					//falls through to using official bot token below
+				} else {
+					acked := make(chan bool)
+					pubsub := tokenProvider.client.Subscribe(context.Background(), discord.CompleteTaskAckKey(task.TaskID))
+					go tokenProvider.waitForAck(pubsub, AckFromClientCapturesTimeout, acked)
+					res := <-acked
+					if res {
+						log.Println("Successful mute/deafen using client capture bot!")
+						tokenProvider.IncrGuildTokenComboLock(guildID, connectCode)
+						//hooray! we did the mute with a client token!
+						w.WriteHeader(http.StatusOK)
+						return
+					} else {
+						log.Println("No ack from client capture bot for task " + task.TaskID)
+						//falls through to using official bot token below
+					}
 				}
 			}
+		} else {
+			log.Println("Capture client is probably rate-limited. Deferring to main bot instead")
 		}
-		log.Printf("Applying mute=%v, deaf=%v using primary bot\n", m, d)
-		discord.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userID, m == "true" || m == "t", d == "true" || d == "t")
 
-		//tokensKey := guildTokensKey(guildID)
-		//hashedToken, err := tokenProvider.client.SRandMember(ctx, tokensKey).Result()
-		//if err != nil {
-		//	log.Println(err)
-		//	w.WriteHeader(http.StatusInternalServerError)
-		//	w.Write([]byte(err.Error()))
-		//	return
-		//}
-		//
-		//if sess, ok := tokenProvider.activeSessions[hashedToken]; ok {
-		//
-		//}
+		log.Printf("Applying mute=%v, deaf=%v using primary bot\n", m, d)
+		err := discord.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userID, m == "true" || m == "t", d == "true" || d == "t")
+		if err == nil {
+			w.WriteHeader(http.StatusOK)
+			return
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
 	}).Methods("POST")
 
 	r.HandleFunc("/addtoken", func(w http.ResponseWriter, r *http.Request) {
@@ -233,8 +315,8 @@ func (tokenProvider *TokenProvider) waitForAck(pubsub *redis.PubSub, waitTime ti
 		case <-t.C:
 			result <- false
 			return
-		case <-pubsub.Channel():
-			result <- true
+		case t := <-pubsub.Channel():
+			result <- t.Payload == "true"
 			return
 		}
 	}

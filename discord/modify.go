@@ -25,7 +25,7 @@ func NewModifyTask(guildID, userID int64, params NoNickPatchParams) ModifyTask {
 		GuildID:    guildID,
 		UserID:     userID,
 		Parameters: params,
-		TaskID:     hex.EncodeToString(h.Sum(nil)),
+		TaskID:     hex.EncodeToString(h.Sum(nil))[0:10],
 	}
 }
 
@@ -34,7 +34,7 @@ type NoNickPatchParams struct {
 	Mute bool `json:"mute"`
 }
 
-func ApplyMuteDeaf(sess *discordgo.Session, guildID, userID string, mute, deaf bool) {
+func ApplyMuteDeaf(sess *discordgo.Session, guildID, userID string, mute, deaf bool) error {
 	log.Printf("Issuing update request to discord for UserID %s with mute=%v deaf=%v\n", userID, mute, deaf)
 
 	p := NoNickPatchParams{
@@ -43,8 +43,5 @@ func ApplyMuteDeaf(sess *discordgo.Session, guildID, userID string, mute, deaf b
 	}
 
 	_, err := sess.RequestWithBucketID("PATCH", discordgo.EndpointGuildMember(guildID, userID), p, discordgo.EndpointGuildMember(guildID, ""))
-	if err != nil {
-		log.Println(err)
-		//guildMemberUpdateNoNick(s, params)
-	}
+	return err
 }

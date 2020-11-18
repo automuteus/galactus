@@ -27,11 +27,12 @@ type Broker struct {
 	client *redis.Client
 
 	//map of socket IDs to connection codes
-	connections     map[string]string
-	botIDs          map[string]string
-	ackKillChannels map[string]chan bool
-	connectionsLock sync.RWMutex
-	socketsLock     sync.RWMutex
+	connections map[string]string
+	//map of task IDs to task channels
+	taskChannels     map[string]chan bool
+	ackKillChannels  map[string]chan bool
+	connectionsLock  sync.RWMutex
+	taskChannelsLock sync.RWMutex
 }
 
 func NewBroker(redisAddr, redisUser, redisPass string) *Broker {
@@ -42,17 +43,19 @@ func NewBroker(redisAddr, redisUser, redisPass string) *Broker {
 		DB:       0, // use default DB
 	})
 	return &Broker{
-		client:          rdb,
-		connections:     map[string]string{},
-		botIDs:          map[string]string{},
-		ackKillChannels: map[string]chan bool{},
-		connectionsLock: sync.RWMutex{},
-		socketsLock:     sync.RWMutex{},
+		client:           rdb,
+		connections:      map[string]string{},
+		taskChannels:     map[string]chan bool{},
+		ackKillChannels:  map[string]chan bool{},
+		connectionsLock:  sync.RWMutex{},
+		taskChannelsLock: sync.RWMutex{},
 	}
 }
 
 func (broker *Broker) TasksListener(server *socketio.Server, connectCode string, killchan <-chan bool) {
 	pubsub := broker.client.Subscribe(context.Background(), discord.TasksSubscribeKey(connectCode))
+	subKillChan := make(chan bool)
+	taskID := ""
 
 	for {
 		select {
@@ -64,17 +67,52 @@ func (broker *Broker) TasksListener(server *socketio.Server, connectCode string,
 				log.Println(err)
 				break
 			}
-			//TODO make sure the mute actually gets issued! This just verifies that we broadcasted to interested clients
-			err = broker.client.Publish(context.Background(), discord.BroadcastTaskAckKey(task.TaskID), "").Err()
+
+			err = broker.client.Publish(context.Background(), discord.BroadcastTaskAckKey(task.TaskID), "true").Err()
 			if err != nil {
 				log.Println(err)
 			}
+
+			taskChan := make(chan bool)
+
+			broker.taskChannelsLock.Lock()
+			broker.taskChannels[task.TaskID] = taskChan
+			broker.taskChannelsLock.Unlock()
+			taskID = task.TaskID
+
+			go broker.TaskCompletionListener(task.TaskID, taskChan, subKillChan)
 
 			log.Println("Broadcasting " + t.Payload + " to room " + connectCode)
 			server.BroadcastToRoom("/", connectCode, "modify", t.Payload)
 			break
 		case <-killchan:
 			pubsub.Close()
+			subKillChan <- true //tell the worker to close as well, if relevant
+
+			if taskID != "" {
+				broker.taskChannelsLock.Lock()
+				delete(broker.taskChannels, taskID)
+				broker.taskChannelsLock.Unlock()
+			}
+
+			return
+		}
+	}
+}
+
+//this function waits for a success message, OR, a closure of the channel from higher-up. But either way, we publish to Redis
+func (broker *Broker) TaskCompletionListener(taskID string, taskChan <-chan bool, killChan <-chan bool) {
+	for {
+		select {
+		case t := <-taskChan:
+			msg := "false"
+			if t {
+				msg = "true"
+			}
+			broker.client.Publish(context.Background(), discord.CompleteTaskAckKey(taskID), msg)
+			return
+		case <-killChan:
+			broker.client.Publish(context.Background(), discord.CompleteTaskAckKey(taskID), "false")
 			return
 		}
 	}
@@ -104,11 +142,6 @@ func (broker *Broker) Start(port string) {
 			broker.ackKillChannels[s.ID()] = killChannel
 			broker.connectionsLock.Unlock()
 
-			//this socket is now listening for mutes that can be applied via that connect code
-			s.Join(msg)
-
-			go broker.TasksListener(server, msg, killChannel)
-
 			err := PushJob(ctx, broker.client, msg, Connection, "true")
 			if err != nil {
 				log.Println(err)
@@ -116,6 +149,41 @@ func (broker *Broker) Start(port string) {
 			go broker.AckWorker(ctx, msg, killChannel)
 		}
 	})
+
+	//only join the room for the connect code once we ensure that the bot actually connects with a valid discord session
+	server.OnEvent("/", "botID", func(s socketio.Conn, msg int64) {
+		log.Printf("Received bot ID: \"%d\"", msg)
+
+		broker.connectionsLock.RLock()
+		if code, ok := broker.connections[s.ID()]; ok {
+			//this socket is now listening for mutes that can be applied via that connect code
+			s.Join(code)
+
+			go broker.TasksListener(server, code, broker.ackKillChannels[s.ID()])
+		}
+		broker.connectionsLock.RUnlock()
+	})
+
+	server.OnEvent("/", "taskFailed", func(s socketio.Conn, msg string) {
+		log.Printf("Received failure for task ID: \"%s\"", msg)
+
+		broker.taskChannelsLock.RLock()
+		if tChan, ok := broker.taskChannels[msg]; ok {
+			tChan <- false
+		}
+		broker.taskChannelsLock.RUnlock()
+	})
+
+	server.OnEvent("/", "taskComplete", func(s socketio.Conn, msg string) {
+		log.Printf("Received success for task ID: \"%s\"", msg)
+
+		broker.taskChannelsLock.RLock()
+		if tChan, ok := broker.taskChannels[msg]; ok {
+			tChan <- true
+		}
+		broker.taskChannelsLock.RUnlock()
+	})
+
 	server.OnEvent("/", "lobby", func(s socketio.Conn, msg string) {
 		log.Println("lobby:", msg)
 		//TODO validation
