@@ -256,17 +256,6 @@ func (tokenProvider *TokenProvider) Run(port string) {
 
 		token := string(body)
 
-		k := hashToken(token)
-		tokenProvider.sessionLock.RLock()
-		if _, ok := tokenProvider.activeSessions[k]; ok {
-			log.Println("Key already exists on the server")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Key already exists on the server"))
-			tokenProvider.sessionLock.RUnlock()
-			return
-		}
-		tokenProvider.sessionLock.RUnlock()
-
 		sess, err := discordgo.New("Bot " + token)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -279,6 +268,17 @@ func (tokenProvider *TokenProvider) Run(port string) {
 			w.Write([]byte(err.Error()))
 			return
 		}
+
+		k := hashToken(token)
+		tokenProvider.sessionLock.RLock()
+		if _, ok := tokenProvider.activeSessions[k]; ok {
+			log.Println("Key already exists on the server")
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Key already exists on the server"))
+			tokenProvider.sessionLock.RUnlock()
+			return
+		}
+		tokenProvider.sessionLock.RUnlock()
 
 		hash := hashToken(token)
 		tokenProvider.sessionLock.Lock()
