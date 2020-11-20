@@ -260,7 +260,8 @@ func (broker *Broker) Start(port string) {
 		activeConns := len(broker.connections)
 		broker.connectionsLock.RUnlock()
 
-		activeGames := GetActiveGames(broker.client)
+		//default to listing active games in the last 10 mins
+		activeGames := GetActiveGames(broker.client, 600)
 		version, commit := GetVersionAndCommit(broker.client)
 		totalGuilds := GetGuildCounter(broker.client, version)
 
@@ -317,15 +318,19 @@ func GetGuildCounter(client *redis.Client, version string) int64 {
 	return count
 }
 
-func GetActiveGames(client *redis.Client) int64 {
+func GetActiveGames(client *redis.Client, secs int64) int64 {
 	now := time.Now()
-	before := now.Add(-(time.Second * 600))
+	before := now.Add(-(time.Second * time.Duration(secs)))
 	count, err := client.ZCount(ctx, activeGamesCode(), fmt.Sprintf("%d", before.Unix()), fmt.Sprintf("%d", now.Unix())).Result()
 	if err != nil {
 		log.Println(err)
 		return 0
 	}
 	return count
+}
+
+func RemoveActiveGame(client *redis.Client, connectCode string) {
+	client.ZRem(ctx, activeGamesCode(), connectCode)
 }
 
 //anytime a bot "acks", then push a notification
