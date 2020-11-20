@@ -43,7 +43,6 @@ func guildTokenLock(guildID, hToken string) string {
 	return "automuteus:lock:" + hToken + ":" + guildID
 }
 
-//TODO Galactus needs to update the Node ratelimiting info in Redis!!! Needs the node ID
 func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string) *TokenProvider {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
@@ -302,6 +301,11 @@ func (tokenProvider *TokenProvider) Run(port string) {
 			}
 		}
 	}).Methods("POST")
+
+	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}).Methods("GET")
 
 	http.ListenAndServe(":"+port, r)
 }
