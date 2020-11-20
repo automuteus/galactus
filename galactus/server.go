@@ -307,6 +307,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		w.Write([]byte("ok"))
 	}).Methods("GET")
 
+	log.Println("Galactus token service is running on port " + port + "...")
 	http.ListenAndServe(":"+port, r)
 }
 
