@@ -39,11 +39,11 @@ type TokenProvider struct {
 }
 
 func guildTokensKey(guildID string) string {
-	return "automuteus:tokens:" + guildID
+	return "automuteus:tokens:guild:" + guildID
 }
 
 func allTokensKey() string {
-	return "automuteus:tokens"
+	return "automuteus:alltokens"
 }
 
 func guildTokenLock(guildID, hToken string) string {
