@@ -20,6 +20,13 @@ import (
 const BroadcastToClientCapturesTimeout = time.Millisecond * 200
 const AckFromClientCapturesTimeout = time.Second
 
+var DefaultIdentifyThresholds = discord.IdentifyThresholds{
+	HardWindow:    time.Hour * 24,
+	HardThreshold: 950,
+	SoftWindow:    time.Hour,
+	SoftThreshold: 40,
+}
+
 var ctx = context.Background()
 
 type TokenProvider struct {
@@ -50,6 +57,14 @@ func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string) *TokenPr
 		Password: redisPass,
 		DB:       0, // use default DB
 	})
+
+	if discord.IsTokenLockedOut(rdb, botToken, DefaultIdentifyThresholds) {
+		log.Fatal("BOT HAS EXCEEDED TOKEN LOCKOUT ON PRIMARY TOKEN")
+	}
+
+	discord.WaitForToken(rdb, botToken)
+	discord.MarkIdentifyAndLockForToken(rdb, botToken)
+
 	dg, err := discordgo.New("Bot " + botToken)
 	if err != nil {
 		log.Fatal(err)
@@ -85,6 +100,12 @@ func (tokenProvider *TokenProvider) openAndStartSessionWithToken(token string) b
 	defer tokenProvider.sessionLock.Unlock()
 
 	if _, ok := tokenProvider.activeSessions[k]; !ok {
+		if discord.IsTokenLockedOut(tokenProvider.client, token, DefaultIdentifyThresholds) {
+			log.Println("Token " + token + " is locked out!")
+			return false
+		}
+		discord.WaitForToken(tokenProvider.client, token)
+		discord.MarkIdentifyAndLockForToken(tokenProvider.client, token)
 		sess, err := discordgo.New("Bot " + token)
 		if err != nil {
 			log.Println(err)
@@ -256,6 +277,23 @@ func (tokenProvider *TokenProvider) Run(port string) {
 
 		token := string(body)
 
+		k := hashToken(token)
+		tokenProvider.sessionLock.RLock()
+		if _, ok := tokenProvider.activeSessions[k]; ok {
+			log.Println("Key already exists on the server")
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte("Key already exists on the server"))
+			tokenProvider.sessionLock.RUnlock()
+			return
+		}
+		tokenProvider.sessionLock.RUnlock()
+
+		if discord.IsTokenLockedOut(tokenProvider.client, token, DefaultIdentifyThresholds) {
+			log.Println("Token " + token + " is locked out!")
+			return
+		}
+		discord.WaitForToken(tokenProvider.client, token)
+		discord.MarkIdentifyAndLockForToken(tokenProvider.client, token)
 		sess, err := discordgo.New("Bot " + token)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
@@ -269,31 +307,19 @@ func (tokenProvider *TokenProvider) Run(port string) {
 			return
 		}
 
-		k := hashToken(token)
-		tokenProvider.sessionLock.RLock()
-		if _, ok := tokenProvider.activeSessions[k]; ok {
-			log.Println("Key already exists on the server")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Key already exists on the server"))
-			tokenProvider.sessionLock.RUnlock()
-			return
-		}
-		tokenProvider.sessionLock.RUnlock()
-
-		hash := hashToken(token)
 		tokenProvider.sessionLock.Lock()
-		tokenProvider.activeSessions[hash] = sess
+		tokenProvider.activeSessions[k] = sess
 		tokenProvider.sessionLock.Unlock()
 
 		sess.AddHandler(tokenProvider.newGuild())
-		err = tokenProvider.client.HSet(ctx, allTokensKey(), hash, token).Err()
+		err = tokenProvider.client.HSet(ctx, allTokensKey(), k, token).Err()
 		if err != nil {
 			log.Println(err)
 		}
 
 		//TODO handle guild removals?
 		for _, v := range sess.State.Guilds {
-			err := tokenProvider.client.SAdd(ctx, guildTokensKey(v.ID), hash).Err()
+			err := tokenProvider.client.SAdd(ctx, guildTokensKey(v.ID), k).Err()
 			if err != redis.Nil {
 				log.Println(err)
 			} else {
