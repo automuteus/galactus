@@ -41,7 +41,7 @@ type IdentifyThresholds struct {
 }
 
 func MarkIdentifyAndLockForToken(client *redis.Client, token string) {
-	log.Println("Marking IDENTIFY for token: " + token)
+	//log.Println("Marking IDENTIFY for token: " + token)
 	key := BotTokenIdentifyKey(token)
 	t := time.Now().Unix()
 	_, err := client.ZAdd(context.Background(), key, &redis.Z{

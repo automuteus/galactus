@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -335,8 +336,8 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		//TODO handle guild removals?
 		for _, v := range sess.State.Guilds {
 			err := tokenProvider.client.SAdd(ctx, guildTokensKey(v.ID), k).Err()
-			if err != redis.Nil {
-				log.Println(err)
+			if err != redis.Nil && err != nil {
+				log.Println(strings.ReplaceAll(err.Error(), token, "<redacted>"))
 			} else {
 				log.Println("Added token for guild " + v.ID)
 			}
