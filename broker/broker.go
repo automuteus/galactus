@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/automuteus/galactus/discord"
 	"github.com/go-redis/redis/v8"
 	socketio "github.com/googollee/go-socket.io"
 	"github.com/gorilla/mux"
@@ -26,9 +27,12 @@ type Broker struct {
 	client *redis.Client
 
 	//map of socket IDs to connection codes
-	connections     map[string]string
-	ackKillChannels map[string]chan bool
-	connectionsLock sync.RWMutex
+	connections map[string]string
+	//map of task IDs to task channels
+	taskChannels     map[string]chan bool
+	ackKillChannels  map[string]chan bool
+	connectionsLock  sync.RWMutex
+	taskChannelsLock sync.RWMutex
 }
 
 func NewBroker(redisAddr, redisUser, redisPass string) *Broker {
@@ -39,10 +43,78 @@ func NewBroker(redisAddr, redisUser, redisPass string) *Broker {
 		DB:       0, // use default DB
 	})
 	return &Broker{
-		client:          rdb,
-		connections:     map[string]string{},
-		ackKillChannels: map[string]chan bool{},
-		connectionsLock: sync.RWMutex{},
+		client:           rdb,
+		connections:      map[string]string{},
+		taskChannels:     map[string]chan bool{},
+		ackKillChannels:  map[string]chan bool{},
+		connectionsLock:  sync.RWMutex{},
+		taskChannelsLock: sync.RWMutex{},
+	}
+}
+
+func (broker *Broker) TasksListener(server *socketio.Server, connectCode string, killchan <-chan bool) {
+	pubsub := broker.client.Subscribe(context.Background(), discord.TasksSubscribeKey(connectCode))
+	subKillChan := make(chan bool)
+	taskID := ""
+
+	for {
+		select {
+		case t := <-pubsub.Channel():
+			task := discord.ModifyTask{}
+
+			err := json.Unmarshal([]byte(t.Payload), &task)
+			if err != nil {
+				log.Println(err)
+				break
+			}
+
+			err = broker.client.Publish(context.Background(), discord.BroadcastTaskAckKey(task.TaskID), "true").Err()
+			if err != nil {
+				log.Println(err)
+			}
+
+			taskChan := make(chan bool)
+
+			broker.taskChannelsLock.Lock()
+			broker.taskChannels[task.TaskID] = taskChan
+			broker.taskChannelsLock.Unlock()
+			taskID = task.TaskID
+
+			go broker.TaskCompletionListener(task.TaskID, taskChan, subKillChan)
+
+			log.Println("Broadcasting " + t.Payload + " to room " + connectCode)
+			server.BroadcastToRoom("/", connectCode, "modify", t.Payload)
+			break
+		case <-killchan:
+			pubsub.Close()
+			subKillChan <- true //tell the worker to close as well, if relevant
+
+			if taskID != "" {
+				broker.taskChannelsLock.Lock()
+				delete(broker.taskChannels, taskID)
+				broker.taskChannelsLock.Unlock()
+			}
+
+			return
+		}
+	}
+}
+
+//this function waits for a success message, OR, a closure of the channel from higher-up. But either way, we publish to Redis
+func (broker *Broker) TaskCompletionListener(taskID string, taskChan <-chan bool, killChan <-chan bool) {
+	for {
+		select {
+		case t := <-taskChan:
+			msg := "false"
+			if t {
+				msg = "true"
+			}
+			broker.client.Publish(context.Background(), discord.CompleteTaskAckKey(taskID), msg)
+			return
+		case <-killChan:
+			broker.client.Publish(context.Background(), discord.CompleteTaskAckKey(taskID), "false")
+			return
+		}
 	}
 }
 
@@ -51,6 +123,7 @@ func (broker *Broker) Start(port string) {
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	server.OnConnect("/", func(s socketio.Conn) error {
 		s.SetContext("")
 		log.Println("connected:", s.ID())
@@ -76,6 +149,41 @@ func (broker *Broker) Start(port string) {
 			go broker.AckWorker(ctx, msg, killChannel)
 		}
 	})
+
+	//only join the room for the connect code once we ensure that the bot actually connects with a valid discord session
+	server.OnEvent("/", "botID", func(s socketio.Conn, msg int64) {
+		log.Printf("Received bot ID: \"%d\"", msg)
+
+		broker.connectionsLock.RLock()
+		if code, ok := broker.connections[s.ID()]; ok {
+			//this socket is now listening for mutes that can be applied via that connect code
+			s.Join(code)
+
+			go broker.TasksListener(server, code, broker.ackKillChannels[s.ID()])
+		}
+		broker.connectionsLock.RUnlock()
+	})
+
+	server.OnEvent("/", "taskFailed", func(s socketio.Conn, msg string) {
+		log.Printf("Received failure for task ID: \"%s\"", msg)
+
+		broker.taskChannelsLock.RLock()
+		if tChan, ok := broker.taskChannels[msg]; ok {
+			tChan <- false
+		}
+		broker.taskChannelsLock.RUnlock()
+	})
+
+	server.OnEvent("/", "taskComplete", func(s socketio.Conn, msg string) {
+		log.Printf("Received success for task ID: \"%s\"", msg)
+
+		broker.taskChannelsLock.RLock()
+		if tChan, ok := broker.taskChannels[msg]; ok {
+			tChan <- true
+		}
+		broker.taskChannelsLock.RUnlock()
+	})
+
 	server.OnEvent("/", "lobby", func(s socketio.Conn, msg string) {
 		log.Println("lobby:", msg)
 		//TODO validation
@@ -152,7 +260,8 @@ func (broker *Broker) Start(port string) {
 		activeConns := len(broker.connections)
 		broker.connectionsLock.RUnlock()
 
-		activeGames := GetActiveGames(broker.client)
+		//default to listing active games in the last 10 mins
+		activeGames := GetActiveGames(broker.client, 600)
 		version, commit := GetVersionAndCommit(broker.client)
 		totalGuilds := GetGuildCounter(broker.client, version)
 
@@ -209,15 +318,19 @@ func GetGuildCounter(client *redis.Client, version string) int64 {
 	return count
 }
 
-func GetActiveGames(client *redis.Client) int64 {
+func GetActiveGames(client *redis.Client, secs int64) int64 {
 	now := time.Now()
-	before := now.Add(-(time.Second * 600))
+	before := now.Add(-(time.Second * time.Duration(secs)))
 	count, err := client.ZCount(ctx, activeGamesCode(), fmt.Sprintf("%d", before.Unix()), fmt.Sprintf("%d", now.Unix())).Result()
 	if err != nil {
 		log.Println(err)
 		return 0
 	}
 	return count
+}
+
+func RemoveActiveGame(client *redis.Client, connectCode string) {
+	client.ZRem(ctx, activeGamesCode(), connectCode)
 }
 
 //anytime a bot "acks", then push a notification
