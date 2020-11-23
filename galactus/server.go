@@ -131,7 +131,7 @@ func (tokenProvider *TokenProvider) openAndStartSessionWithToken(token string) b
 			return false
 		}
 		//associates the guilds with this token to be used for requests
-		sess.AddHandler(tokenProvider.newGuild())
+		sess.AddHandler(tokenProvider.newGuild(k))
 		log.Println("Opened session on startup for " + k)
 		tokenProvider.activeSessions[k] = sess
 		return true
@@ -292,8 +292,10 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		defer r.Body.Close()
 
 		token := string(body)
+		log.Println(token)
 
 		k := hashToken(token)
+		log.Println(k)
 		tokenProvider.sessionLock.RLock()
 		if _, ok := tokenProvider.activeSessions[k]; ok {
 			log.Println("Token already exists on the server")
@@ -316,7 +318,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 			w.Write([]byte(err.Error()))
 			return
 		}
-		sess.AddHandler(tokenProvider.newGuild())
+		sess.AddHandler(tokenProvider.newGuild(k))
 		err = sess.Open()
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -371,7 +373,7 @@ func (tokenProvider *TokenProvider) waitForAck(pubsub *redis.PubSub, waitTime ti
 
 func hashToken(token string) string {
 	h := sha256.New()
-	h.Sum([]byte(token))
+	h.Write([]byte(token))
 	return hex.EncodeToString(h.Sum(nil))
 }
 
@@ -386,11 +388,11 @@ func (tokenProvider *TokenProvider) Close() {
 	tokenProvider.primarySession.Close()
 }
 
-func (tokenProvider *TokenProvider) newGuild() func(s *discordgo.Session, m *discordgo.GuildCreate) {
+func (tokenProvider *TokenProvider) newGuild(hashedToken string) func(s *discordgo.Session, m *discordgo.GuildCreate) {
 	return func(s *discordgo.Session, m *discordgo.GuildCreate) {
 		tokenProvider.sessionLock.RLock()
-		for hashedToken, sess := range tokenProvider.activeSessions {
-			if sess == s {
+		for test := range tokenProvider.activeSessions {
+			if hashedToken == test {
 				err := tokenProvider.client.SAdd(ctx, guildTokensKey(m.Guild.ID), hashedToken)
 				if err != nil {
 					log.Println(err)
