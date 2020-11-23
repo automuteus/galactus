@@ -316,6 +316,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 			w.Write([]byte(err.Error()))
 			return
 		}
+		sess.AddHandler(tokenProvider.newGuild())
 		err = sess.Open()
 		if err != nil {
 			w.WriteHeader(http.StatusUnauthorized)
@@ -327,7 +328,6 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		tokenProvider.activeSessions[k] = sess
 		tokenProvider.sessionLock.Unlock()
 
-		sess.AddHandler(tokenProvider.newGuild())
 		err = tokenProvider.client.HSet(ctx, allTokensKey(), k, token).Err()
 		if err != nil {
 			log.Println(err)
