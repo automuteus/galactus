@@ -113,7 +113,7 @@ func (tokenProvider *TokenProvider) openAndStartSessionWithToken(token string) b
 
 	if _, ok := tokenProvider.activeSessions[k]; !ok {
 		if discord.IsTokenLockedOut(tokenProvider.client, token, DefaultIdentifyThresholds) {
-			log.Println("Token " + token + " is locked out!")
+			log.Println("Token <redacted> is locked out!")
 			return false
 		}
 		discord.WaitForToken(tokenProvider.client, token)
@@ -295,16 +295,16 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		k := hashToken(token)
 		tokenProvider.sessionLock.RLock()
 		if _, ok := tokenProvider.activeSessions[k]; ok {
-			log.Println("Key already exists on the server")
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Key already exists on the server"))
+			log.Println("Token already exists on the server")
+			w.WriteHeader(http.StatusAlreadyReported)
+			w.Write([]byte("Token already exists on the server"))
 			tokenProvider.sessionLock.RUnlock()
 			return
 		}
 		tokenProvider.sessionLock.RUnlock()
 
 		if discord.IsTokenLockedOut(tokenProvider.client, token, DefaultIdentifyThresholds) {
-			log.Println("Token " + token + " is locked out!")
+			log.Println("Token <redacted> is locked out!")
 			return
 		}
 		discord.WaitForToken(tokenProvider.client, token)
