@@ -12,6 +12,7 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 	"time"
@@ -69,6 +70,17 @@ func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string) *TokenPr
 	if err != nil {
 		log.Fatal(err)
 	}
+	dg.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsGuilds)
+	shards := os.Getenv("NUM_SHARDS")
+	if shards != "" {
+		n, err := strconv.ParseInt(shards, 10, 64)
+		if err != nil {
+			log.Println(err)
+		}
+		dg.ShardCount = int(n)
+		dg.ShardID = 0
+	}
+
 	err = dg.Open()
 	if err != nil {
 		log.Fatal(err)
@@ -111,6 +123,7 @@ func (tokenProvider *TokenProvider) openAndStartSessionWithToken(token string) b
 			log.Println(err)
 			return false
 		}
+		sess.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsGuilds)
 		err = sess.Open()
 		if err != nil {
 			log.Println(err)
@@ -192,6 +205,8 @@ func (tokenProvider *TokenProvider) Run(port string) {
 			w.Write([]byte("Invalid values or parameters received. Query should be of the form `/modify/<guildID>/<conncode>/<userID>?mute=true?deaf=false`"))
 			return
 		}
+
+		//TODO check/cache premium status with the database here? Or receive that as a parameter to the endpoint?
 
 		sess, hToken := tokenProvider.getAnySession(guildID)
 		if sess != nil {

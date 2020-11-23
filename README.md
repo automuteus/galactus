@@ -29,3 +29,7 @@ storage of temporary tokens, and, crucially, communication between the Capture c
 * `BROKER_PORT`: The port on which the broker will listen for socket connections from capture clients. Defaults to 8123.
 * `REDIS_USER`: Username to authenticate with Redis, if applicable.
 * `REDIS_PASS`: Password to authenticate with Redis, if applicable.
+
+## **Do not provide unless you know what you're doing**:
+* `NUM_SHARDS`: Should match whatever automuteus is using
+* `SHARD_ID`: Probably just use 0
