@@ -192,93 +192,117 @@ func (tokenProvider *TokenProvider) Run(port string) {
 	r := mux.NewRouter()
 
 	// /modify/guild/conncode/userid?mute=true?deaf=false
-	r.HandleFunc("/modify/{guildID}/{connectCode}/{userID}", func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc("/modify/{guildID}/{connectCode}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		guildID := vars["guildID"]
-		userID := vars["userID"]
 		connectCode := vars["connectCode"]
-		m := r.URL.Query().Get("mute")
-		d := r.URL.Query().Get("deaf")
 		gid, gerr := strconv.ParseInt(guildID, 10, 64)
-		uid, uerr := strconv.ParseInt(userID, 10, 64)
-		if m == "" || d == "" || gerr != nil || uerr != nil {
+		if gerr != nil {
 			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Invalid values or parameters received. Query should be of the form `/modify/<guildID>/<conncode>/<userID>?mute=true?deaf=false`"))
+			w.Write([]byte("Invalid guildID received. Query should be of the form POST `/modify/<guildID>/<conncode>`"))
 			return
 		}
 
-		//TODO check/cache premium status with the database here? Or receive that as a parameter to the endpoint?
+		body, err := ioutil.ReadAll(r.Body)
+		log.Println(body)
+		if err != nil {
+			log.Println(err)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(err.Error()))
+			return
+		}
+		defer r.Body.Close()
 
-		sess, hToken := tokenProvider.getAnySession(guildID)
-		if sess != nil {
-			err := discord.ApplyMuteDeaf(sess, guildID, userID, m == "true" || m == "t", d == "true" || d == "t")
-			if err == nil {
-				tokenProvider.IncrGuildTokenComboLock(guildID, hToken)
-				log.Printf("Successfully applied mute=%v, deaf=%v using secondary bot\n", m, d)
-				w.WriteHeader(http.StatusOK)
-				return
-			}
-		} else {
-			log.Println("No secondary bot tokens found. Trying other methods")
+		userModifications := UserModifyRequest{}
+		err = json.Unmarshal(body, &userModifications)
+		if err != nil {
+			log.Println(err)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(err.Error()))
+			return
 		}
 
-		//this is cheeky, but use the connect code as part of the lock; don't issue too many requests on the capture client w/ this code
-		if tokenProvider.CanUseGuildTokenCombo(guildID, connectCode) {
-			//if the secondary token didn't work, then next we try the client-side capture request
-			task := discord.NewModifyTask(gid, uid, discord.NoNickPatchParams{
-				Deaf: d == "true" || d == "t",
-				Mute: m == "true" || m == "t",
-			})
-			jBytes, err := json.Marshal(task)
-			if err != nil {
-				log.Println(err)
-				w.WriteHeader(http.StatusBadRequest)
-				w.Write([]byte("Unable to marshal JSON into Task"))
-				return
-			} else {
-				acked := make(chan bool)
-				pubsub := tokenProvider.client.Subscribe(context.Background(), discord.BroadcastTaskAckKey(task.TaskID))
-				go tokenProvider.waitForAck(pubsub, BroadcastToClientCapturesTimeout, acked)
+		wg := sync.WaitGroup{}
+		for _, modifyReq := range userModifications.Users {
+			wg.Add(1)
 
-				err := tokenProvider.client.Publish(context.Background(), discord.TasksSubscribeKey(connectCode), jBytes).Err()
+			go func(request UserModify) {
+				defer wg.Done()
+
+				uid, err := strconv.ParseInt(request.UserID, 10, 64)
+				if err != nil {
+					log.Println(err)
+					return
+				}
+
+				sess, hToken := tokenProvider.getAnySession(guildID)
+				if sess != nil {
+					err := discord.ApplyMuteDeaf(sess, guildID, request.UserID, request.Mute, request.Deaf)
+					if err == nil {
+						tokenProvider.IncrGuildTokenComboLock(guildID, hToken)
+						log.Printf("Successfully applied mute=%v, deaf=%v to User %s using secondary bot: %s\n", request.Mute, request.Deaf, request.UserID, hToken)
+						return
+					}
+				} else {
+					log.Println("No secondary bot tokens found. Trying other methods")
+				}
+				//this is cheeky, but use the connect code as part of the lock; don't issue too many requests on the capture client w/ this code
+				if tokenProvider.CanUseGuildTokenCombo(guildID, connectCode) {
+					//if the secondary token didn't work, then next we try the client-side capture request
+					task := discord.NewModifyTask(gid, uid, discord.NoNickPatchParams{
+						Deaf: request.Deaf,
+						Mute: request.Mute,
+					})
+					jBytes, err := json.Marshal(task)
+					if err != nil {
+						log.Println(err)
+						return
+					} else {
+						acked := make(chan bool)
+						pubsub := tokenProvider.client.Subscribe(context.Background(), discord.BroadcastTaskAckKey(task.TaskID))
+						go tokenProvider.waitForAck(pubsub, BroadcastToClientCapturesTimeout, acked)
+
+						err := tokenProvider.client.Publish(context.Background(), discord.TasksSubscribeKey(connectCode), jBytes).Err()
+						if err != nil {
+							log.Println(err)
+						}
+
+						res := <-acked
+						if !res {
+							log.Println("Request timed out waiting for broadcast to capture clients for task " + task.TaskID)
+							//falls through to using official bot token below
+						} else {
+							acked := make(chan bool)
+							pubsub := tokenProvider.client.Subscribe(context.Background(), discord.CompleteTaskAckKey(task.TaskID))
+							go tokenProvider.waitForAck(pubsub, AckFromClientCapturesTimeout, acked)
+							res := <-acked
+							if res {
+								log.Println("Successful mute/deafen using client capture bot!")
+								tokenProvider.IncrGuildTokenComboLock(guildID, connectCode)
+								//hooray! we did the mute with a client token!
+								return
+							} else {
+								log.Println("No ack from client capture bot for task " + task.TaskID)
+								//falls through to using official bot token below
+							}
+						}
+					}
+				} else {
+					log.Println("Capture client is probably rate-limited. Deferring to main bot instead")
+				}
+				log.Printf("Applying mute=%v, deaf=%v using primary bot\n", request.Mute, request.Deaf)
+				err = discord.ApplyMuteDeaf(tokenProvider.primarySession, guildID, request.UserID, request.Mute, request.Deaf)
 				if err != nil {
 					log.Println(err)
 				}
 
-				res := <-acked
-				if !res {
-					log.Println("Request timed out waiting for broadcast to capture clients for task " + task.TaskID)
-					//falls through to using official bot token below
-				} else {
-					acked := make(chan bool)
-					pubsub := tokenProvider.client.Subscribe(context.Background(), discord.CompleteTaskAckKey(task.TaskID))
-					go tokenProvider.waitForAck(pubsub, AckFromClientCapturesTimeout, acked)
-					res := <-acked
-					if res {
-						log.Println("Successful mute/deafen using client capture bot!")
-						tokenProvider.IncrGuildTokenComboLock(guildID, connectCode)
-						//hooray! we did the mute with a client token!
-						w.WriteHeader(http.StatusOK)
-						return
-					} else {
-						log.Println("No ack from client capture bot for task " + task.TaskID)
-						//falls through to using official bot token below
-					}
-				}
-			}
-		} else {
-			log.Println("Capture client is probably rate-limited. Deferring to main bot instead")
+			}(modifyReq)
 		}
+		wg.Wait()
+		w.WriteHeader(http.StatusOK)
+		return
 
-		log.Printf("Applying mute=%v, deaf=%v using primary bot\n", m, d)
-		err := discord.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userID, m == "true" || m == "t", d == "true" || d == "t")
-		if err == nil {
-			w.WriteHeader(http.StatusOK)
-			return
-		} else {
-			w.WriteHeader(http.StatusInternalServerError)
-			return
-		}
+		//TODO check/cache premium status with the database here? Or receive that as a parameter to the endpoint?
 	}).Methods("POST")
 
 	r.HandleFunc("/addtoken", func(w http.ResponseWriter, r *http.Request) {
