@@ -227,6 +227,18 @@ func (broker *Broker) Start(port string) {
 		}
 		broker.connectionsLock.RUnlock()
 	})
+	server.OnEvent("/", "gameover", func(s socketio.Conn, msg string) {
+		broker.connectionsLock.RLock()
+		if cCode, ok := broker.connections[s.ID()]; ok {
+			err := PushJob(ctx, broker.client, cCode, GameOver, msg)
+			if err != nil {
+				log.Println(err)
+			}
+
+		}
+		broker.connectionsLock.RUnlock()
+
+	})
 	server.OnError("/", func(s socketio.Conn, e error) {
 		log.Println("meet error:", e)
 	})

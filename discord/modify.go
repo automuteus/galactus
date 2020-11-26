@@ -10,13 +10,13 @@ import (
 )
 
 type ModifyTask struct {
-	GuildID    int64             `json:"guildID"`
-	UserID     int64             `json:"userID"`
+	GuildID    uint64            `json:"guildID"`
+	UserID     uint64            `json:"userID"`
 	Parameters NoNickPatchParams `json:"parameters"`
 	TaskID     string            `json:"taskID"`
 }
 
-func NewModifyTask(guildID, userID int64, params NoNickPatchParams) ModifyTask {
+func NewModifyTask(guildID, userID uint64, params NoNickPatchParams) ModifyTask {
 	h := sha256.New()
 	h.Write([]byte(fmt.Sprintf("%d", guildID)))
 	h.Write([]byte(fmt.Sprintf("%d", userID)))

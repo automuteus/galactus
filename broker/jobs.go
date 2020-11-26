@@ -14,6 +14,7 @@ const (
 	Lobby
 	State
 	Player
+	GameOver
 )
 
 type Job struct {

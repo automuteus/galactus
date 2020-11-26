@@ -196,7 +196,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		vars := mux.Vars(r)
 		guildID := vars["guildID"]
 		connectCode := vars["connectCode"]
-		gid, gerr := strconv.ParseInt(guildID, 10, 64)
+		gid, gerr := strconv.ParseUint(guildID, 10, 64)
 		if gerr != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte("Invalid guildID received. Query should be of the form POST `/modify/<guildID>/<conncode>`"))
@@ -229,18 +229,14 @@ func (tokenProvider *TokenProvider) Run(port string) {
 			go func(request UserModify) {
 				defer wg.Done()
 
-				uid, err := strconv.ParseInt(request.UserID, 10, 64)
-				if err != nil {
-					log.Println(err)
-					return
-				}
+				userIdStr := strconv.FormatUint(request.UserID, 10)
 
 				sess, hToken := tokenProvider.getAnySession(guildID)
 				if sess != nil {
-					err := discord.ApplyMuteDeaf(sess, guildID, request.UserID, request.Mute, request.Deaf)
+					err := discord.ApplyMuteDeaf(sess, guildID, userIdStr, request.Mute, request.Deaf)
 					if err == nil {
 						tokenProvider.IncrGuildTokenComboLock(guildID, hToken)
-						log.Printf("Successfully applied mute=%v, deaf=%v to User %s using secondary bot: %s\n", request.Mute, request.Deaf, request.UserID, hToken)
+						log.Printf("Successfully applied mute=%v, deaf=%v to User %d using secondary bot: %s\n", request.Mute, request.Deaf, request.UserID, hToken)
 						return
 					}
 				} else {
@@ -249,7 +245,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 				//this is cheeky, but use the connect code as part of the lock; don't issue too many requests on the capture client w/ this code
 				if tokenProvider.CanUseGuildTokenCombo(guildID, connectCode) {
 					//if the secondary token didn't work, then next we try the client-side capture request
-					task := discord.NewModifyTask(gid, uid, discord.NoNickPatchParams{
+					task := discord.NewModifyTask(gid, request.UserID, discord.NoNickPatchParams{
 						Deaf: request.Deaf,
 						Mute: request.Mute,
 					})
@@ -291,7 +287,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 					log.Println("Capture client is probably rate-limited. Deferring to main bot instead")
 				}
 				log.Printf("Applying mute=%v, deaf=%v using primary bot\n", request.Mute, request.Deaf)
-				err = discord.ApplyMuteDeaf(tokenProvider.primarySession, guildID, request.UserID, request.Mute, request.Deaf)
+				err = discord.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userIdStr, request.Mute, request.Deaf)
 				if err != nil {
 					log.Println(err)
 				}
