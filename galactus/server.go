@@ -19,7 +19,7 @@ import (
 	"time"
 )
 
-const BroadcastToClientCapturesTimeout = time.Millisecond * 300
+const BroadcastToClientCapturesTimeout = time.Millisecond * 500
 const AckFromClientCapturesTimeout = time.Second
 
 var DefaultIdentifyThresholds = discord.IdentifyThresholds{
@@ -198,7 +198,7 @@ func (tokenProvider *TokenProvider) BlacklistTokenForDuration(guildID, hashToken
 	return tokenProvider.client.Set(context.Background(), guildTokenLock(guildID, hashToken), tokenProvider.maxRequests5Seconds, duration).Err()
 }
 
-var UnresponsiveCaptureBlacklistDuration = time.Minute * time.Duration(5)
+var UnresponsiveCaptureBlacklistDuration = time.Minute * time.Duration(1)
 
 func (tokenProvider *TokenProvider) Run(port string) {
 	r := mux.NewRouter()
@@ -235,6 +235,13 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		}
 
 		wg := sync.WaitGroup{}
+		mdsc := discord.MuteDeafenSuccessCounts{
+			Worker:   0,
+			Capture:  0,
+			Official: 0,
+		}
+		mdscLock := sync.Mutex{}
+
 		for _, modifyReq := range userModifications.Users {
 			wg.Add(1)
 
@@ -251,6 +258,9 @@ func (tokenProvider *TokenProvider) Run(port string) {
 						if err == nil {
 							tokenProvider.IncrGuildTokenComboLock(guildID, hToken)
 							log.Printf("Successfully applied mute=%v, deaf=%v to User %d using secondary bot: %s\n", request.Mute, request.Deaf, request.UserID, hToken)
+							mdscLock.Lock()
+							mdsc.Worker++
+							mdscLock.Unlock()
 							return
 						}
 					} else {
@@ -284,7 +294,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 						if !res {
 							err := tokenProvider.BlacklistTokenForDuration(guildID, connectCode, UnresponsiveCaptureBlacklistDuration)
 							if err == nil {
-								log.Printf("No ack from capture clients; blacklisting capture client for %s attempts for %s\n", connectCode, UnresponsiveCaptureBlacklistDuration.String())
+								log.Printf("No ack from capture clients; blacklisting capture client for gamecode \"%s\" for %s\n", connectCode, UnresponsiveCaptureBlacklistDuration.String())
 							}
 							//falls through to using official bot token below
 						} else {
@@ -295,10 +305,16 @@ func (tokenProvider *TokenProvider) Run(port string) {
 							if res {
 								log.Println("Successful mute/deafen using client capture bot!")
 								tokenProvider.IncrGuildTokenComboLock(guildID, connectCode)
+								mdscLock.Lock()
+								mdsc.Capture++
+								mdscLock.Unlock()
 								//hooray! we did the mute with a client token!
 								return
 							} else {
-								log.Println("No ack from client capture bot for task " + task.TaskID)
+								err := tokenProvider.BlacklistTokenForDuration(guildID, connectCode, UnresponsiveCaptureBlacklistDuration)
+								if err == nil {
+									log.Printf("No ack from capture clients; blacklisting capture client for gamecode \"%s\" for %s\n", connectCode, UnresponsiveCaptureBlacklistDuration.String())
+								}
 								//falls through to using official bot token below
 							}
 						}
@@ -311,11 +327,23 @@ func (tokenProvider *TokenProvider) Run(port string) {
 				if err != nil {
 					log.Println(err)
 				}
+				mdscLock.Lock()
+				mdsc.Official++
+				mdscLock.Unlock()
 
 			}(modifyReq)
 		}
 		wg.Wait()
 		w.WriteHeader(http.StatusOK)
+		jbytes, err := json.Marshal(mdsc)
+		if err != nil {
+			log.Println(err)
+		} else {
+			_, err := w.Write(jbytes)
+			if err != nil {
+				log.Println(err)
+			}
+		}
 		return
 	}).Methods("POST")
 

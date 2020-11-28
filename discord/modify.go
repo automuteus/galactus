@@ -45,3 +45,10 @@ func ApplyMuteDeaf(sess *discordgo.Session, guildID, userID string, mute, deaf b
 	_, err := sess.RequestWithBucketID("PATCH", discordgo.EndpointGuildMember(guildID, userID), p, discordgo.EndpointGuildMember(guildID, ""))
 	return err
 }
+
+//a response indicating how the mutes/deafens were issued
+type MuteDeafenSuccessCounts struct {
+	Worker   int64 `json:"worker"`
+	Capture  int64 `json:"capture"`
+	Official int64 `json:"official"`
+}
