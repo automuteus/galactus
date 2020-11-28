@@ -19,14 +19,14 @@ import (
 	"time"
 )
 
-const BroadcastToClientCapturesTimeout = time.Millisecond * 200
+const BroadcastToClientCapturesTimeout = time.Millisecond * 300
 const AckFromClientCapturesTimeout = time.Second
 
 var DefaultIdentifyThresholds = discord.IdentifyThresholds{
 	HardWindow:    time.Hour * 24,
 	HardThreshold: 950,
-	SoftWindow:    time.Hour,
-	SoftThreshold: 40,
+	SoftWindow:    time.Hour * 2,
+	SoftThreshold: 80,
 }
 
 var ctx = context.Background()
@@ -36,8 +36,9 @@ type TokenProvider struct {
 	primarySession *discordgo.Session
 
 	//maps hashed tokens to active discord sessions
-	activeSessions map[string]*discordgo.Session
-	sessionLock    sync.RWMutex
+	activeSessions      map[string]*discordgo.Session
+	maxRequests5Seconds int64
+	sessionLock         sync.RWMutex
 }
 
 func guildTokensKey(guildID string) string {
@@ -52,7 +53,7 @@ func guildTokenLock(guildID, hToken string) string {
 	return "automuteus:lock:" + hToken + ":" + guildID
 }
 
-func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string) *TokenProvider {
+func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string, maxReq int64) *TokenProvider {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
 		Username: redisUser,
@@ -88,10 +89,11 @@ func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string) *TokenPr
 	}
 
 	return &TokenProvider{
-		client:         rdb,
-		primarySession: dg,
-		activeSessions: make(map[string]*discordgo.Session),
-		sessionLock:    sync.RWMutex{},
+		client:              rdb,
+		primarySession:      dg,
+		activeSessions:      make(map[string]*discordgo.Session),
+		maxRequests5Seconds: maxReq,
+		sessionLock:         sync.RWMutex{},
 	}
 }
 
@@ -139,7 +141,7 @@ func (tokenProvider *TokenProvider) openAndStartSessionWithToken(token string) b
 	return false
 }
 
-func (tokenProvider *TokenProvider) getAnySession(guildID string) (*discordgo.Session, string) {
+func (tokenProvider *TokenProvider) getAnySession(guildID string, limit int) (*discordgo.Session, string) {
 	hTokens, err := tokenProvider.client.SMembers(context.Background(), guildTokensKey(guildID)).Result()
 	if err != nil {
 		return nil, ""
@@ -148,7 +150,10 @@ func (tokenProvider *TokenProvider) getAnySession(guildID string) (*discordgo.Se
 	tokenProvider.sessionLock.RLock()
 	defer tokenProvider.sessionLock.RUnlock()
 
-	for _, hToken := range hTokens {
+	for i, hToken := range hTokens {
+		if i == limit {
+			return nil, ""
+		}
 		//if this token isn't potentially rate-limited
 		if tokenProvider.CanUseGuildTokenCombo(guildID, hToken) {
 			if sess, ok := tokenProvider.activeSessions[hToken]; ok {
@@ -185,8 +190,15 @@ func (tokenProvider *TokenProvider) CanUseGuildTokenCombo(guildID, hashToken str
 		return true
 	}
 
-	return i < 5
+	//-1 or 0 should be never-limit
+	return i < 1 || i < tokenProvider.maxRequests5Seconds
 }
+
+func (tokenProvider *TokenProvider) BlacklistTokenForDuration(guildID, hashToken string, duration time.Duration) error {
+	return tokenProvider.client.Set(context.Background(), guildTokenLock(guildID, hashToken), tokenProvider.maxRequests5Seconds, duration).Err()
+}
+
+var UnresponsiveCaptureBlacklistDuration = time.Minute * time.Duration(5)
 
 func (tokenProvider *TokenProvider) Run(port string) {
 	r := mux.NewRouter()
@@ -231,16 +243,21 @@ func (tokenProvider *TokenProvider) Run(port string) {
 
 				userIdStr := strconv.FormatUint(request.UserID, 10)
 
-				sess, hToken := tokenProvider.getAnySession(guildID)
-				if sess != nil {
-					err := discord.ApplyMuteDeaf(sess, guildID, userIdStr, request.Mute, request.Deaf)
-					if err == nil {
-						tokenProvider.IncrGuildTokenComboLock(guildID, hToken)
-						log.Printf("Successfully applied mute=%v, deaf=%v to User %d using secondary bot: %s\n", request.Mute, request.Deaf, request.UserID, hToken)
-						return
+				limit := PremiumBotConstraints[userModifications.Premium]
+				if limit > 0 {
+					sess, hToken := tokenProvider.getAnySession(guildID, limit)
+					if sess != nil {
+						err := discord.ApplyMuteDeaf(sess, guildID, userIdStr, request.Mute, request.Deaf)
+						if err == nil {
+							tokenProvider.IncrGuildTokenComboLock(guildID, hToken)
+							log.Printf("Successfully applied mute=%v, deaf=%v to User %d using secondary bot: %s\n", request.Mute, request.Deaf, request.UserID, hToken)
+							return
+						}
+					} else {
+						log.Println("No secondary bot tokens found. Trying other methods")
 					}
 				} else {
-					log.Println("No secondary bot tokens found. Trying other methods")
+					log.Println("Guild has no access to secondary bot tokens; skipping")
 				}
 				//this is cheeky, but use the connect code as part of the lock; don't issue too many requests on the capture client w/ this code
 				if tokenProvider.CanUseGuildTokenCombo(guildID, connectCode) {
@@ -265,7 +282,10 @@ func (tokenProvider *TokenProvider) Run(port string) {
 
 						res := <-acked
 						if !res {
-							log.Println("Request timed out waiting for broadcast to capture clients for task " + task.TaskID)
+							err := tokenProvider.BlacklistTokenForDuration(guildID, connectCode, UnresponsiveCaptureBlacklistDuration)
+							if err == nil {
+								log.Printf("No ack from capture clients; blacklisting capture client for %s attempts for %s\n", connectCode, UnresponsiveCaptureBlacklistDuration.String())
+							}
 							//falls through to using official bot token below
 						} else {
 							acked := make(chan bool)
@@ -297,8 +317,6 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		wg.Wait()
 		w.WriteHeader(http.StatusOK)
 		return
-
-		//TODO check/cache premium status with the database here? Or receive that as a parameter to the endpoint?
 	}).Methods("POST")
 
 	r.HandleFunc("/addtoken", func(w http.ResponseWriter, r *http.Request) {
@@ -355,7 +373,6 @@ func (tokenProvider *TokenProvider) Run(port string) {
 			log.Println(err)
 		}
 
-		//TODO handle guild removals?
 		for _, v := range sess.State.Guilds {
 			err := tokenProvider.client.SAdd(ctx, guildTokensKey(v.ID), k).Err()
 			if err != redis.Nil && err != nil {
