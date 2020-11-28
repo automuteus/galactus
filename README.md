@@ -33,3 +33,5 @@ storage of temporary tokens, and, crucially, communication between the Capture c
 ## **Do not provide unless you know what you're doing**:
 * `NUM_SHARDS`: Should match whatever automuteus is using
 * `SHARD_ID`: Probably just use 0
+* `MAX_REQ_5_SEC`: How many Discord API mute/deafens should be issued per token per 5 second window. Defaults to 6 (ratelimits
+returned by Discord are [5-10]/5sec, so 6 is a conservative heuristic)

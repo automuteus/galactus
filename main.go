@@ -6,11 +6,13 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 )
 
 const DefaultGalactusPort = "5858"
 const DefaultBrokerPort = "8123"
+const DefaultMaxRequests5Sec int64 = 6
 
 func main() {
 	botToken := os.Getenv("DISCORD_BOT_TOKEN")
@@ -48,7 +50,14 @@ func main() {
 		log.Println("No REDIS_PASS specified.")
 	}
 
-	tp := galactus.NewTokenProvider(botToken, redisAddr, redisUser, redisPass)
+	maxReq5Sec := os.Getenv("MAX_REQ_5_SEC")
+	maxReq := DefaultMaxRequests5Sec
+	num, err := strconv.ParseInt(maxReq5Sec, 10, 64)
+	if err == nil {
+		maxReq = num
+	}
+
+	tp := galactus.NewTokenProvider(botToken, redisAddr, redisUser, redisPass, maxReq)
 	tp.PopulateAndStartSessions()
 	msgBroker := broker.NewBroker(redisAddr, redisUser, redisPass)
 
