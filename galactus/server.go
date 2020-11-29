@@ -25,8 +25,8 @@ const AckFromClientCapturesTimeout = time.Second
 var DefaultIdentifyThresholds = discord.IdentifyThresholds{
 	HardWindow:    time.Hour * 24,
 	HardThreshold: 950,
-	SoftWindow:    time.Hour * 2,
-	SoftThreshold: 80,
+	SoftWindow:    time.Hour * 12,
+	SoftThreshold: 500,
 }
 
 var ctx = context.Background()

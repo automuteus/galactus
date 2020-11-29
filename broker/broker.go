@@ -11,6 +11,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -292,8 +293,88 @@ func (broker *Broker) Start(port string) {
 		w.Write(jsonBytes)
 	})
 
+	router.HandleFunc("/lobbycode/{connectCode}", func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+		conncode := vars["connectCode"]
+
+		if conncode == "" {
+			errorResponse(w)
+			return
+		}
+		cursor := uint64(0)
+		keys := []string{}
+		for len(keys) == 0 {
+			keys, cursor, err = broker.client.Scan(context.Background(), cursor, "automuteus:discord:*:"+conncode, 10).Result()
+			if cursor == 0 {
+				break
+			}
+			i := 0
+			for _, v := range keys {
+				if !strings.Contains(v, ":pointer:") {
+					keys[i] = v
+					i++
+				}
+			}
+		}
+
+		if err != nil || len(keys) == 0 {
+			log.Println(err)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		key := keys[0]
+		res, err := broker.client.Get(context.Background(), key).Result()
+		if err != nil {
+			log.Println(err)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		} else {
+			jsonVars := map[string]interface{}{}
+			err := json.Unmarshal([]byte(res), &jsonVars)
+			if err != nil || jsonVars["amongUsData"] == nil {
+				errorResponse(w)
+				return
+			}
+
+			//this is some ugly casting
+			auData := jsonVars["amongUsData"].(map[string]interface{})
+
+			if auData["room"] == nil {
+				errorResponse(w)
+				return
+			}
+
+			r := Resp{Result: auData["room"].(string)}
+			jbytes, err := json.Marshal(r)
+			if err != nil {
+				log.Println(err)
+				w.WriteHeader(http.StatusInternalServerError)
+			} else {
+				w.WriteHeader(http.StatusOK)
+				w.Write(jbytes)
+			}
+			return
+		}
+	})
 	log.Printf("Message broker is running on port %s...\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, router))
+}
+
+type Resp struct {
+	Result string `json:"result"`
+}
+
+func errorResponse(w http.ResponseWriter) {
+	w.WriteHeader(http.StatusBadRequest)
+	r := Resp{Result: "error"}
+	jbytes, err := json.Marshal(r)
+	if err != nil {
+		log.Println(err)
+		w.WriteHeader(http.StatusInternalServerError)
+	} else {
+		w.Write(jbytes)
+	}
+	return
 }
 
 func totalGuildsKey(version string) string {
@@ -308,6 +389,8 @@ func versionKey() string {
 func commitKey() string {
 	return "automuteus:commit"
 }
+
+///////
 
 func GetVersionAndCommit(client *redis.Client) (string, string) {
 	v, err := client.Get(ctx, versionKey()).Result()
