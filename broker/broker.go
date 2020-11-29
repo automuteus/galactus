@@ -297,7 +297,7 @@ func (broker *Broker) Start(port string) {
 		vars := mux.Vars(r)
 		conncode := vars["connectCode"]
 
-		if conncode == "" {
+		if conncode == "" || len(conncode) != 8 {
 			errorResponse(w)
 			return
 		}
