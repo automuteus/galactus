@@ -171,20 +171,11 @@ func (tokenProvider *TokenProvider) getAnySession(guildID string, limit int) (*d
 }
 
 func (tokenProvider *TokenProvider) IncrGuildTokenComboLock(guildID, hashToken string) {
-	v := int64(0)
-	vStr, err := tokenProvider.client.Get(context.Background(), guildTokenLock(guildID, hashToken)).Result()
-	if err == redis.Nil {
-		v = 0
-	} else {
-		v, _ = strconv.ParseInt(vStr, 10, 64)
-	}
-	v++
-
-	//5 second TTL
-	err = tokenProvider.client.Set(context.Background(), guildTokenLock(guildID, hashToken), v, time.Second*5).Err()
+	err := tokenProvider.client.Incr(context.Background(), guildTokenLock(guildID, hashToken)).Err()
 	if err != nil {
-		log.Println(err)
+		log.Println()
 	}
+	tokenProvider.client.Expire(context.Background(), guildTokenLock(guildID, hashToken), time.Second*5)
 }
 
 func (tokenProvider *TokenProvider) CanUseGuildTokenCombo(guildID, hashToken string) bool {
