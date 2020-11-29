@@ -175,7 +175,10 @@ func (tokenProvider *TokenProvider) IncrGuildTokenComboLock(guildID, hashToken s
 	if err != nil {
 		log.Println()
 	}
-	tokenProvider.client.Expire(context.Background(), guildTokenLock(guildID, hashToken), time.Second*5)
+	err = tokenProvider.client.Expire(context.Background(), guildTokenLock(guildID, hashToken), time.Second*5).Err()
+	if err != nil {
+		log.Println(err)
+	}
 }
 
 func (tokenProvider *TokenProvider) CanUseGuildTokenCombo(guildID, hashToken string) bool {
@@ -191,6 +194,7 @@ func (tokenProvider *TokenProvider) CanUseGuildTokenCombo(guildID, hashToken str
 		log.Println(err)
 		return true
 	}
+	log.Printf("Request count on this guild/token: %d\n", i)
 
 	return i < tokenProvider.maxRequests5Seconds
 }
@@ -204,7 +208,6 @@ var UnresponsiveCaptureBlacklistDuration = time.Minute * time.Duration(1)
 func (tokenProvider *TokenProvider) Run(port string) {
 	r := mux.NewRouter()
 
-	// /modify/guild/conncode/userid?mute=true?deaf=false
 	r.HandleFunc("/modify/{guildID}/{connectCode}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
 		guildID := vars["guildID"]
@@ -242,28 +245,34 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		}
 		mdscLock := sync.Mutex{}
 
+		sessLock := sync.Mutex{}
+
 		for _, modifyReq := range userModifications.Users {
 			wg.Add(1)
 
+			limit := PremiumBotConstraints[userModifications.Premium]
 			go func(request UserModify) {
 				defer wg.Done()
 
 				userIdStr := strconv.FormatUint(request.UserID, 10)
-
-				limit := PremiumBotConstraints[userModifications.Premium]
 				if limit > 0 {
+					sessLock.Lock()
 					sess, hToken := tokenProvider.getAnySession(guildID, limit)
 					if sess != nil {
+						tokenProvider.IncrGuildTokenComboLock(guildID, hToken)
+						sessLock.Unlock()
+
 						err := discord.ApplyMuteDeaf(sess, guildID, userIdStr, request.Mute, request.Deaf)
-						if err == nil {
-							tokenProvider.IncrGuildTokenComboLock(guildID, hToken)
-							log.Printf("Successfully applied mute=%v, deaf=%v to User %d using secondary bot: %s\n", request.Mute, request.Deaf, request.UserID, hToken)
-							mdscLock.Lock()
-							mdsc.Worker++
-							mdscLock.Unlock()
-							return
+						if err != nil {
+							log.Println(err)
 						}
+						log.Printf("Successfully applied mute=%v, deaf=%v to User %d using secondary bot: %s\n", request.Mute, request.Deaf, request.UserID, hToken)
+						mdscLock.Lock()
+						mdsc.Worker++
+						mdscLock.Unlock()
+						return
 					} else {
+						sessLock.Unlock()
 						log.Println("No secondary bot tokens found. Trying other methods")
 					}
 				} else {
