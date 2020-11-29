@@ -172,26 +172,36 @@ func (tokenProvider *TokenProvider) getAnySession(guildID string, limit int) (*d
 
 func (tokenProvider *TokenProvider) IncrGuildTokenComboLock(guildID, hashToken string) {
 	v := int64(0)
-	vStr, _ := tokenProvider.client.Get(context.Background(), guildTokenLock(guildID, hashToken)).Result()
-	v, _ = strconv.ParseInt(vStr, 10, 64)
+	vStr, err := tokenProvider.client.Get(context.Background(), guildTokenLock(guildID, hashToken)).Result()
+	if err == redis.Nil {
+		v = 0
+	} else {
+		v, _ = strconv.ParseInt(vStr, 10, 64)
+	}
 	v++
 
 	//5 second TTL
-	tokenProvider.client.Set(context.Background(), guildTokenLock(guildID, hashToken), v, time.Second*5)
+	err = tokenProvider.client.Set(context.Background(), guildTokenLock(guildID, hashToken), v, time.Second*5).Err()
+	if err != nil {
+		log.Println(err)
+	}
 }
 
 func (tokenProvider *TokenProvider) CanUseGuildTokenCombo(guildID, hashToken string) bool {
 	res, err := tokenProvider.client.Get(context.Background(), guildTokenLock(guildID, hashToken)).Result()
-	if err != nil {
+	if err == redis.Nil {
+		return true
+	} else if err != nil {
+		log.Println(err)
 		return true
 	}
 	i, err := strconv.ParseInt(res, 10, 64)
 	if err != nil {
+		log.Println(err)
 		return true
 	}
 
-	//-1 or 0 should be never-limit
-	return i < 1 || i < tokenProvider.maxRequests5Seconds
+	return i < tokenProvider.maxRequests5Seconds
 }
 
 func (tokenProvider *TokenProvider) BlacklistTokenForDuration(guildID, hashToken string, duration time.Duration) error {
@@ -216,7 +226,6 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		}
 
 		body, err := ioutil.ReadAll(r.Body)
-		log.Println(body)
 		if err != nil {
 			log.Println(err)
 			w.WriteHeader(http.StatusBadRequest)
