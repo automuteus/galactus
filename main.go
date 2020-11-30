@@ -12,7 +12,7 @@ import (
 
 const DefaultGalactusPort = "5858"
 const DefaultBrokerPort = "8123"
-const DefaultMaxRequests5Sec int64 = 6
+const DefaultMaxRequests5Sec int64 = 7
 
 func main() {
 	botToken := os.Getenv("DISCORD_BOT_TOKEN")

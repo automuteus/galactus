@@ -155,7 +155,7 @@ func (tokenProvider *TokenProvider) getAnySession(guildID string, limit int) (*d
 			return nil, ""
 		}
 		//if this token isn't potentially rate-limited
-		if tokenProvider.CanUseGuildTokenCombo(guildID, hToken) {
+		if tokenProvider.IncrAndTestGuildTokenComboLock(guildID, hToken) {
 			if sess, ok := tokenProvider.activeSessions[hToken]; ok {
 				return sess, hToken
 			} else {
@@ -170,33 +170,21 @@ func (tokenProvider *TokenProvider) getAnySession(guildID string, limit int) (*d
 	return nil, ""
 }
 
-func (tokenProvider *TokenProvider) IncrGuildTokenComboLock(guildID, hashToken string) {
-	err := tokenProvider.client.Incr(context.Background(), guildTokenLock(guildID, hashToken)).Err()
+func (tokenProvider *TokenProvider) IncrAndTestGuildTokenComboLock(guildID, hashToken string) bool {
+	i, err := tokenProvider.client.Incr(context.Background(), guildTokenLock(guildID, hashToken)).Result()
 	if err != nil {
-		log.Println()
+		log.Println(err)
 	}
+
 	err = tokenProvider.client.Expire(context.Background(), guildTokenLock(guildID, hashToken), time.Second*5).Err()
 	if err != nil {
 		log.Println(err)
 	}
-}
 
-func (tokenProvider *TokenProvider) CanUseGuildTokenCombo(guildID, hashToken string) bool {
-	res, err := tokenProvider.client.Get(context.Background(), guildTokenLock(guildID, hashToken)).Result()
-	if err == redis.Nil {
-		return true
-	} else if err != nil {
-		log.Println(err)
-		return true
-	}
-	i, err := strconv.ParseInt(res, 10, 64)
-	if err != nil {
-		log.Println(err)
-		return true
-	}
-	log.Printf("Request count on this guild/token: %d\n", i)
+	usable := i < tokenProvider.maxRequests5Seconds
+	log.Printf("Token %s on guild %s is at count %d. Skipping: %v", hashToken, guildID, i, usable)
 
-	return i < tokenProvider.maxRequests5Seconds
+	return usable
 }
 
 func (tokenProvider *TokenProvider) BlacklistTokenForDuration(guildID, hashToken string, duration time.Duration) error {
@@ -245,8 +233,6 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		}
 		mdscLock := sync.Mutex{}
 
-		sessLock := sync.Mutex{}
-
 		for _, modifyReq := range userModifications.Users {
 			wg.Add(1)
 
@@ -256,30 +242,27 @@ func (tokenProvider *TokenProvider) Run(port string) {
 
 				userIdStr := strconv.FormatUint(request.UserID, 10)
 				if limit > 0 {
-					sessLock.Lock()
 					sess, hToken := tokenProvider.getAnySession(guildID, limit)
 					if sess != nil {
-						tokenProvider.IncrGuildTokenComboLock(guildID, hToken)
-						sessLock.Unlock()
-
 						err := discord.ApplyMuteDeaf(sess, guildID, userIdStr, request.Mute, request.Deaf)
 						if err != nil {
+							log.Println("Failed to apply mute to player with error:")
 							log.Println(err)
+						} else {
+							log.Printf("Successfully applied mute=%v, deaf=%v to User %d using secondary bot: %s\n", request.Mute, request.Deaf, request.UserID, hToken)
+							mdscLock.Lock()
+							mdsc.Worker++
+							mdscLock.Unlock()
+							return
 						}
-						log.Printf("Successfully applied mute=%v, deaf=%v to User %d using secondary bot: %s\n", request.Mute, request.Deaf, request.UserID, hToken)
-						mdscLock.Lock()
-						mdsc.Worker++
-						mdscLock.Unlock()
-						return
 					} else {
-						sessLock.Unlock()
 						log.Println("No secondary bot tokens found. Trying other methods")
 					}
 				} else {
 					log.Println("Guild has no access to secondary bot tokens; skipping")
 				}
 				//this is cheeky, but use the connect code as part of the lock; don't issue too many requests on the capture client w/ this code
-				if tokenProvider.CanUseGuildTokenCombo(guildID, connectCode) {
+				if tokenProvider.IncrAndTestGuildTokenComboLock(guildID, connectCode) {
 					//if the secondary token didn't work, then next we try the client-side capture request
 					task := discord.NewModifyTask(gid, request.UserID, discord.NoNickPatchParams{
 						Deaf: request.Deaf,
@@ -313,7 +296,6 @@ func (tokenProvider *TokenProvider) Run(port string) {
 							res := <-acked
 							if res {
 								log.Println("Successful mute/deafen using client capture bot!")
-								tokenProvider.IncrGuildTokenComboLock(guildID, connectCode)
 								mdscLock.Lock()
 								mdsc.Capture++
 								mdscLock.Unlock()
