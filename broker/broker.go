@@ -276,7 +276,7 @@ func (broker *Broker) Start(port string) {
 		//default to listing active games in the last 10 mins
 		activeGames := GetActiveGames(broker.client, 600)
 		version, commit := GetVersionAndCommit(broker.client)
-		totalGuilds := GetGuildCounter(broker.client, version)
+		totalGuilds := GetGuildCounter(broker.client)
 
 		data := map[string]interface{}{
 			"version":           version,
@@ -377,8 +377,8 @@ func errorResponse(w http.ResponseWriter) {
 	return
 }
 
-func totalGuildsKey(version string) string {
-	return "automuteus:count:guilds:version-" + version
+func totalGuildsKey() string {
+	return "automuteus:count:guilds"
 }
 
 //TODO these are duplicated in the main repo and here! Eek!
@@ -404,8 +404,8 @@ func GetVersionAndCommit(client *redis.Client) (string, string) {
 	return v, c
 }
 
-func GetGuildCounter(client *redis.Client, version string) int64 {
-	count, err := client.SCard(ctx, totalGuildsKey(version)).Result()
+func GetGuildCounter(client *redis.Client) int64 {
+	count, err := client.SCard(ctx, totalGuildsKey()).Result()
 	if err != nil {
 		log.Println(err)
 		return 0
