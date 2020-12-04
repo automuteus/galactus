@@ -11,7 +11,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -22,6 +21,15 @@ var ctx = context.Background()
 
 func activeGamesCode() string {
 	return "automuteus:games"
+}
+
+type GameLobby struct {
+	LobbyCode string `json:"LobbyCode"`
+	Region    int    `json:"Region"`
+}
+
+func roomCodesForConnCodeKey(connCode string) string {
+	return "automuteus:roomcode:" + connCode
 }
 
 type Broker struct {
@@ -81,7 +89,7 @@ func (broker *Broker) TasksListener(server *socketio.Server, connectCode string,
 			broker.taskChannelsLock.Unlock()
 			taskID = task.TaskID
 
-			go broker.TaskCompletionListener(task.TaskID, taskChan, subKillChan)
+			go broker.TaskCompletionListener(taskID, taskChan, subKillChan)
 
 			log.Println("Broadcasting " + t.Payload + " to room " + connectCode)
 			server.BroadcastToRoom("/", connectCode, "modify", t.Payload)
@@ -187,17 +195,28 @@ func (broker *Broker) Start(port string) {
 
 	server.OnEvent("/", "lobby", func(s socketio.Conn, msg string) {
 		log.Println("lobby:", msg)
-		//TODO validation
 
-		broker.connectionsLock.RLock()
-		if cCode, ok := broker.connections[s.ID()]; ok {
-			err := PushJob(ctx, broker.client, cCode, Lobby, msg)
-			if err != nil {
-				log.Println(err)
+		//validation
+		var lobby GameLobby
+		err := json.Unmarshal([]byte(msg), &lobby)
+		if err != nil {
+			log.Println(err)
+		} else {
+			broker.connectionsLock.RLock()
+			if cCode, ok := broker.connections[s.ID()]; ok {
+				err := PushJob(ctx, broker.client, cCode, Lobby, msg)
+				if err != nil {
+					log.Println(err)
+				}
+				err = broker.client.Set(context.Background(), roomCodesForConnCodeKey(cCode), lobby.LobbyCode, time.Minute*15).Err()
+				if err != nil {
+					log.Println(err)
+				} else {
+					log.Printf("Updated room code %s for connect code %s in Redis", lobby.LobbyCode, cCode)
+				}
 			}
+			broker.connectionsLock.RUnlock()
 		}
-		broker.connectionsLock.RUnlock()
-
 	})
 	server.OnEvent("/", "state", func(s socketio.Conn, msg string) {
 		log.Println("phase received from capture: ", msg)
@@ -297,64 +316,26 @@ func (broker *Broker) Start(port string) {
 		vars := mux.Vars(r)
 		conncode := vars["connectCode"]
 
-		if conncode == "" || len(conncode) != 8 {
+		if conncode == "" || len(conncode) != ConnectCodeLength {
 			errorResponse(w)
 			return
 		}
-		cursor := uint64(0)
-		keys := []string{}
-		for len(keys) == 0 {
-			keys, cursor, err = broker.client.Scan(context.Background(), cursor, "automuteus:discord:*:"+conncode, 10).Result()
-			if cursor == 0 {
-				break
-			}
-			i := 0
-			for _, v := range keys {
-				if !strings.Contains(v, ":pointer:") {
-					keys[i] = v
-					i++
-				}
-			}
-		}
 
-		if err != nil || len(keys) == 0 {
-			log.Println(err)
+		key, err := broker.client.Get(context.Background(), roomCodesForConnCodeKey(conncode)).Result()
+		if err == redis.Nil {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
-		key := keys[0]
-		res, err := broker.client.Get(context.Background(), key).Result()
+		resp := Resp{Result: key}
+		jbytes, err := json.Marshal(resp)
 		if err != nil {
 			log.Println(err)
-			w.WriteHeader(http.StatusNotFound)
-			return
+			w.WriteHeader(http.StatusInternalServerError)
 		} else {
-			jsonVars := map[string]interface{}{}
-			err := json.Unmarshal([]byte(res), &jsonVars)
-			if err != nil || jsonVars["amongUsData"] == nil {
-				errorResponse(w)
-				return
-			}
-
-			//this is some ugly casting
-			auData := jsonVars["amongUsData"].(map[string]interface{})
-
-			if auData["room"] == nil {
-				errorResponse(w)
-				return
-			}
-
-			r := Resp{Result: auData["room"].(string)}
-			jbytes, err := json.Marshal(r)
-			if err != nil {
-				log.Println(err)
-				w.WriteHeader(http.StatusInternalServerError)
-			} else {
-				w.WriteHeader(http.StatusOK)
-				w.Write(jbytes)
-			}
-			return
+			w.WriteHeader(http.StatusOK)
+			w.Write(jbytes)
 		}
+		return
 	})
 	log.Printf("Message broker is running on port %s...\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, router))

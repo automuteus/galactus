@@ -19,8 +19,8 @@ import (
 	"time"
 )
 
-const BroadcastToClientCapturesTimeout = time.Millisecond * 500
-const AckFromClientCapturesTimeout = time.Second
+const DefaultBroadcastToClientBotTimeout = time.Second
+const DefaultAckFromClientBotTimeout = time.Second * 2
 
 var DefaultIdentifyThresholds = discord.IdentifyThresholds{
 	HardWindow:    time.Hour * 24,
@@ -182,7 +182,7 @@ func (tokenProvider *TokenProvider) IncrAndTestGuildTokenComboLock(guildID, hash
 	}
 
 	usable := i < tokenProvider.maxRequests5Seconds
-	log.Printf("Token %s on guild %s is at count %d. Skipping: %v", hashToken, guildID, i, usable)
+	log.Printf("Token %s on guild %s is at count %d. Using: %v", hashToken, guildID, i, usable)
 
 	return usable
 }
@@ -195,6 +195,21 @@ var UnresponsiveCaptureBlacklistDuration = time.Minute * time.Duration(1)
 
 func (tokenProvider *TokenProvider) Run(port string) {
 	r := mux.NewRouter()
+
+	ackTimeoutms := DefaultAckFromClientBotTimeout
+	taskTimeoutms := DefaultBroadcastToClientBotTimeout
+
+	ackTimeoutmsStr := os.Getenv("ACK_TIMEOUT_MS")
+	num, err := strconv.ParseInt(ackTimeoutmsStr, 10, 64)
+	if err == nil {
+		ackTimeoutms = time.Millisecond * time.Duration(num)
+	}
+
+	taskTimeoutmsStr := os.Getenv("TASK_TIMEOUT_MS")
+	num, err = strconv.ParseInt(taskTimeoutmsStr, 10, 64)
+	if err == nil {
+		taskTimeoutms = time.Millisecond * time.Duration(num)
+	}
 
 	r.HandleFunc("/modify/{guildID}/{connectCode}", func(w http.ResponseWriter, r *http.Request) {
 		vars := mux.Vars(r)
@@ -275,7 +290,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 					} else {
 						acked := make(chan bool)
 						pubsub := tokenProvider.client.Subscribe(context.Background(), discord.BroadcastTaskAckKey(task.TaskID))
-						go tokenProvider.waitForAck(pubsub, BroadcastToClientCapturesTimeout, acked)
+						go tokenProvider.waitForAck(pubsub, ackTimeoutms, acked)
 
 						err := tokenProvider.client.Publish(context.Background(), discord.TasksSubscribeKey(connectCode), jBytes).Err()
 						if err != nil {
@@ -292,7 +307,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 						} else {
 							acked := make(chan bool)
 							pubsub := tokenProvider.client.Subscribe(context.Background(), discord.CompleteTaskAckKey(task.TaskID))
-							go tokenProvider.waitForAck(pubsub, AckFromClientCapturesTimeout, acked)
+							go tokenProvider.waitForAck(pubsub, taskTimeoutms, acked)
 							res := <-acked
 							if res {
 								log.Println("Successful mute/deafen using client capture bot!")
@@ -419,9 +434,11 @@ func (tokenProvider *TokenProvider) waitForAck(pubsub *redis.PubSub, waitTime ti
 		select {
 		case <-t.C:
 			result <- false
+			t.Stop()
 			return
-		case t := <-pubsub.Channel():
-			result <- t.Payload == "true"
+		case val := <-pubsub.Channel():
+			result <- val.Payload == "true"
+			t.Stop()
 			return
 		}
 	}
