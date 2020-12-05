@@ -22,6 +22,9 @@ import (
 const DefaultBroadcastToClientBotTimeout = time.Second
 const DefaultAckFromClientBotTimeout = time.Second * 2
 
+var RateLimitExceedCounter = int64(0)
+var RateLimitExceedLock = sync.Mutex{}
+
 var DefaultIdentifyThresholds = discord.IdentifyThresholds{
 	HardWindow:    time.Hour * 24,
 	HardThreshold: 950,
@@ -50,7 +53,7 @@ func allTokensKey() string {
 }
 
 func guildTokenLock(guildID, hToken string) string {
-	return "automuteus:lock:" + hToken + ":" + guildID
+	return "automuteus:muterequest:lock:" + hToken + ":" + guildID
 }
 
 func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string, maxReq int64) *TokenProvider {
@@ -141,16 +144,19 @@ func (tokenProvider *TokenProvider) openAndStartSessionWithToken(token string) b
 	return false
 }
 
-func (tokenProvider *TokenProvider) getAnySession(guildID string, limit int) (*discordgo.Session, string) {
+func (tokenProvider *TokenProvider) getAllTokensForGuild(guildID string) []string {
 	hTokens, err := tokenProvider.client.SMembers(context.Background(), guildTokensKey(guildID)).Result()
 	if err != nil {
-		return nil, ""
+		return nil
 	}
+	return hTokens
+}
 
+func (tokenProvider *TokenProvider) getAnySession(guildID string, tokens []string, limit int) (*discordgo.Session, string) {
 	tokenProvider.sessionLock.RLock()
 	defer tokenProvider.sessionLock.RUnlock()
 
-	for i, hToken := range hTokens {
+	for i, hToken := range tokens {
 		if i == limit {
 			return nil, ""
 		}
@@ -175,16 +181,18 @@ func (tokenProvider *TokenProvider) IncrAndTestGuildTokenComboLock(guildID, hash
 	if err != nil {
 		log.Println(err)
 	}
+	usable := i < tokenProvider.maxRequests5Seconds
+	log.Printf("Token %s on guild %s is at count %d. Using: %v", hashToken, guildID, i, usable)
+	if !usable {
+		return false
+	}
 
 	err = tokenProvider.client.Expire(context.Background(), guildTokenLock(guildID, hashToken), time.Second*5).Err()
 	if err != nil {
 		log.Println(err)
 	}
 
-	usable := i < tokenProvider.maxRequests5Seconds
-	log.Printf("Token %s on guild %s is at count %d. Using: %v", hashToken, guildID, i, usable)
-
-	return usable
+	return true
 }
 
 func (tokenProvider *TokenProvider) BlacklistTokenForDuration(guildID, hashToken string, duration time.Duration) error {
@@ -242,9 +250,10 @@ func (tokenProvider *TokenProvider) Run(port string) {
 
 		wg := sync.WaitGroup{}
 		mdsc := discord.MuteDeafenSuccessCounts{
-			Worker:   0,
-			Capture:  0,
-			Official: 0,
+			Worker:    0,
+			Capture:   0,
+			Official:  0,
+			RateLimit: 0,
 		}
 		mdscLock := sync.Mutex{}
 
@@ -252,12 +261,14 @@ func (tokenProvider *TokenProvider) Run(port string) {
 			wg.Add(1)
 
 			limit := PremiumBotConstraints[userModifications.Premium]
+			tokens := tokenProvider.getAllTokensForGuild(guildID)
+
 			go func(request UserModify) {
 				defer wg.Done()
 
 				userIdStr := strconv.FormatUint(request.UserID, 10)
-				if limit > 0 {
-					sess, hToken := tokenProvider.getAnySession(guildID, limit)
+				if tokens != nil && limit > 0 {
+					sess, hToken := tokenProvider.getAnySession(guildID, tokens, limit)
 					if sess != nil {
 						err := discord.ApplyMuteDeaf(sess, guildID, userIdStr, request.Mute, request.Deaf)
 						if err != nil {
@@ -289,7 +300,10 @@ func (tokenProvider *TokenProvider) Run(port string) {
 						return
 					} else {
 						acked := make(chan bool)
+						//subscribe to hearing if anyone says "hey, I can handle that task! (multiple brokers)"
 						pubsub := tokenProvider.client.Subscribe(context.Background(), discord.BroadcastTaskAckKey(task.TaskID))
+
+						//wait for an ACK, or for a timeout (nobody said they could handle the task)
 						go tokenProvider.waitForAck(pubsub, ackTimeoutms, acked)
 
 						err := tokenProvider.client.Publish(context.Background(), discord.TasksSubscribeKey(connectCode), jBytes).Err()
@@ -306,6 +320,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 							//falls through to using official bot token below
 						} else {
 							acked := make(chan bool)
+							//now we wait for an ack with respect to actually performing the mute
 							pubsub := tokenProvider.client.Subscribe(context.Background(), discord.CompleteTaskAckKey(task.TaskID))
 							go tokenProvider.waitForAck(pubsub, taskTimeoutms, acked)
 							res := <-acked
@@ -330,17 +345,24 @@ func (tokenProvider *TokenProvider) Run(port string) {
 				}
 				log.Printf("Applying mute=%v, deaf=%v using primary bot\n", request.Mute, request.Deaf)
 				err = discord.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userIdStr, request.Mute, request.Deaf)
+				tokenProvider.primarySession.AddHandler(tokenProvider.rateLimitEventCallback)
 				if err != nil {
 					log.Println(err)
 				}
 				mdscLock.Lock()
 				mdsc.Official++
 				mdscLock.Unlock()
-
 			}(modifyReq)
 		}
 		wg.Wait()
 		w.WriteHeader(http.StatusOK)
+
+		//return ANY pending rate limit counters. Doesn't really matter which request they actually occurred on, though
+		RateLimitExceedLock.Lock()
+		mdsc.RateLimit = RateLimitExceedCounter
+		RateLimitExceedCounter = 0
+		RateLimitExceedLock.Unlock()
+
 		jbytes, err := json.Marshal(mdsc)
 		if err != nil {
 			log.Println(err)
@@ -424,6 +446,13 @@ func (tokenProvider *TokenProvider) Run(port string) {
 
 	log.Println("Galactus token service is running on port " + port + "...")
 	http.ListenAndServe(":"+port, r)
+}
+
+func (tokenProvider *TokenProvider) rateLimitEventCallback(sess *discordgo.Session, rl *discordgo.RateLimit) {
+	log.Println(rl.Message)
+	RateLimitExceedLock.Lock()
+	RateLimitExceedCounter++
+	RateLimitExceedLock.Unlock()
 }
 
 func (tokenProvider *TokenProvider) waitForAck(pubsub *redis.PubSub, waitTime time.Duration, result chan<- bool) {

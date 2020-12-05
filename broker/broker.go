@@ -292,8 +292,8 @@ func (broker *Broker) Start(port string) {
 		activeConns := len(broker.connections)
 		broker.connectionsLock.RUnlock()
 
-		//default to listing active games in the last 10 mins
-		activeGames := GetActiveGames(broker.client, 600)
+		//default to listing active games in the last 15 mins
+		activeGames := GetActiveGames(broker.client, 900)
 		version, commit := GetVersionAndCommit(broker.client)
 		totalGuilds := GetGuildCounter(broker.client)
 
