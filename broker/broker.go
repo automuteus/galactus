@@ -230,6 +230,10 @@ func (broker *Broker) Start(port string) {
 				if err != nil {
 					log.Println(err)
 				}
+				err = broker.client.Expire(context.Background(), roomCodesForConnCodeKey(cCode), time.Minute*15).Err()
+				if err != redis.Nil && err != nil {
+					log.Println(err)
+				}
 			}
 			broker.connectionsLock.RUnlock()
 		}
@@ -243,7 +247,10 @@ func (broker *Broker) Start(port string) {
 			if err != nil {
 				log.Println(err)
 			}
-
+			err = broker.client.Expire(context.Background(), roomCodesForConnCodeKey(cCode), time.Minute*15).Err()
+			if err != redis.Nil && err != nil {
+				log.Println(err)
+			}
 		}
 		broker.connectionsLock.RUnlock()
 	})
