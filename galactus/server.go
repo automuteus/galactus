@@ -85,6 +85,7 @@ func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string, maxReq i
 		dg.ShardCount = int(n)
 		dg.ShardID = 0
 	}
+	dg.AddHandler(rateLimitEventCallback)
 
 	err = dg.Open()
 	if err != nil {
@@ -98,6 +99,13 @@ func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string, maxReq i
 		maxRequests5Seconds: maxReq,
 		sessionLock:         sync.RWMutex{},
 	}
+}
+
+func rateLimitEventCallback(sess *discordgo.Session, rl *discordgo.RateLimit) {
+	log.Println(rl.Message)
+	RateLimitExceedLock.Lock()
+	RateLimitExceedCounter++
+	RateLimitExceedLock.Unlock()
 }
 
 func (tokenProvider *TokenProvider) PopulateAndStartSessions() {
@@ -345,7 +353,6 @@ func (tokenProvider *TokenProvider) Run(port string) {
 				}
 				log.Printf("Applying mute=%v, deaf=%v using primary bot\n", request.Mute, request.Deaf)
 				err = discord.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userIdStr, request.Mute, request.Deaf)
-				tokenProvider.primarySession.AddHandler(tokenProvider.rateLimitEventCallback)
 				if err != nil {
 					log.Println(err)
 				}

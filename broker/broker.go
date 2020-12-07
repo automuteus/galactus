@@ -26,6 +26,7 @@ func activeGamesCode() string {
 type GameLobby struct {
 	LobbyCode string `json:"LobbyCode"`
 	Region    int    `json:"Region"`
+	PlayMap   int    `json:"Map"`
 }
 
 func roomCodesForConnCodeKey(connCode string) string {
