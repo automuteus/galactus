@@ -19,8 +19,8 @@ import (
 	"time"
 )
 
-const DefaultBroadcastToClientBotTimeout = time.Second
-const DefaultAckFromClientBotTimeout = time.Second * 2
+const DefaultBroadcastToClientBotTimeout = time.Millisecond * 500
+const DefaultAckFromClientBotTimeout = time.Second
 
 var RateLimitExceedCounter = int64(0)
 var RateLimitExceedLock = sync.Mutex{}
@@ -207,7 +207,7 @@ func (tokenProvider *TokenProvider) BlacklistTokenForDuration(guildID, hashToken
 	return tokenProvider.client.Set(context.Background(), guildTokenLock(guildID, hashToken), tokenProvider.maxRequests5Seconds, duration).Err()
 }
 
-var UnresponsiveCaptureBlacklistDuration = time.Minute * time.Duration(1)
+var UnresponsiveCaptureBlacklistDuration = time.Minute * time.Duration(5)
 
 func (tokenProvider *TokenProvider) Run(port string) {
 	r := mux.NewRouter()
@@ -316,6 +316,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 
 						err := tokenProvider.client.Publish(context.Background(), discord.TasksSubscribeKey(connectCode), jBytes).Err()
 						if err != nil {
+							log.Println("Error in publishing task to " + discord.TasksSubscribeKey(connectCode))
 							log.Println(err)
 						}
 
@@ -465,6 +466,7 @@ func (tokenProvider *TokenProvider) rateLimitEventCallback(sess *discordgo.Sessi
 func (tokenProvider *TokenProvider) waitForAck(pubsub *redis.PubSub, waitTime time.Duration, result chan<- bool) {
 	t := time.NewTimer(waitTime)
 	defer pubsub.Close()
+	channel := pubsub.Channel()
 
 	for {
 		select {
@@ -472,7 +474,7 @@ func (tokenProvider *TokenProvider) waitForAck(pubsub *redis.PubSub, waitTime ti
 			result <- false
 			t.Stop()
 			return
-		case val := <-pubsub.Channel():
+		case val := <-channel:
 			result <- val.Payload == "true"
 			t.Stop()
 			return

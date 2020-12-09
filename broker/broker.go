@@ -66,10 +66,13 @@ func (broker *Broker) TasksListener(server *socketio.Server, connectCode string,
 	pubsub := broker.client.Subscribe(context.Background(), discord.TasksSubscribeKey(connectCode))
 	subKillChan := make(chan bool)
 	taskID := ""
-
+	log.Println("Task listener OPEN for " + connectCode)
+	defer log.Println("Task listener CLOSE for " + connectCode)
+	defer pubsub.Close()
+	channel := pubsub.Channel()
 	for {
 		select {
-		case t := <-pubsub.Channel():
+		case t := <-channel:
 			task := discord.ModifyTask{}
 
 			err := json.Unmarshal([]byte(t.Payload), &task)
@@ -96,7 +99,6 @@ func (broker *Broker) TasksListener(server *socketio.Server, connectCode string,
 			server.BroadcastToRoom("/", connectCode, "modify", t.Payload)
 			break
 		case <-killchan:
-			pubsub.Close()
 			subKillChan <- true //tell the worker to close as well, if relevant
 
 			if taskID != "" {
@@ -168,8 +170,12 @@ func (broker *Broker) Start(port string) {
 		if code, ok := broker.connections[s.ID()]; ok {
 			//this socket is now listening for mutes that can be applied via that connect code
 			s.Join(code)
-
-			go broker.TasksListener(server, code, broker.ackKillChannels[s.ID()])
+			killChan := broker.ackKillChannels[s.ID()]
+			if killChan != nil {
+				go broker.TasksListener(server, code, killChan)
+			} else {
+				log.Println("Null killchannel for conncode: " + code + ". This means we got a Bot ID before a connect code!")
+			}
 		}
 		broker.connectionsLock.RUnlock()
 	})
@@ -262,10 +268,8 @@ func (broker *Broker) Start(port string) {
 			if err != nil {
 				log.Println(err)
 			}
-
 		}
 		broker.connectionsLock.RUnlock()
-
 	})
 	server.OnError("/", func(s socketio.Conn, e error) {
 		log.Println("meet error:", e)
@@ -279,6 +283,7 @@ func (broker *Broker) Start(port string) {
 			if err != nil {
 				log.Println(err)
 			}
+			server.ClearRoom("/", cCode)
 		}
 		broker.connectionsLock.RUnlock()
 
@@ -420,18 +425,19 @@ func RemoveActiveGame(client *redis.Client, connectCode string) {
 //anytime a bot "acks", then push a notification
 func (broker *Broker) AckWorker(ctx context.Context, connCode string, killChan <-chan bool) {
 	pubsub := AckSubscribe(ctx, broker.client, connCode)
+	channel := pubsub.Channel()
+	defer pubsub.Close()
 
 	for {
 		select {
 		case <-killChan:
-			pubsub.Close()
 			return
-		case <-pubsub.Channel():
+		case <-channel:
 			err := PushJob(ctx, broker.client, connCode, Connection, "true")
 			if err != nil {
 				log.Println(err)
 			}
-			notify(ctx, broker.client, connCode)
+			//notify(ctx, broker.client, connCode)
 			break
 		}
 	}
