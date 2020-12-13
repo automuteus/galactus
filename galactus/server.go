@@ -19,11 +19,7 @@ import (
 	"time"
 )
 
-const DefaultBroadcastToClientBotTimeout = time.Millisecond * 500
-const DefaultAckFromClientBotTimeout = time.Second
-
-var RateLimitExceedCounter = int64(0)
-var RateLimitExceedLock = sync.Mutex{}
+const DefaultCaptureBotTimeout = time.Second
 
 var DefaultIdentifyThresholds = discord.IdentifyThresholds{
 	HardWindow:    time.Hour * 24,
@@ -103,9 +99,6 @@ func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string, maxReq i
 
 func rateLimitEventCallback(sess *discordgo.Session, rl *discordgo.RateLimit) {
 	log.Println(rl.Message)
-	RateLimitExceedLock.Lock()
-	RateLimitExceedCounter++
-	RateLimitExceedLock.Unlock()
 }
 
 func (tokenProvider *TokenProvider) PopulateAndStartSessions() {
@@ -207,24 +200,28 @@ func (tokenProvider *TokenProvider) BlacklistTokenForDuration(guildID, hashToken
 	return tokenProvider.client.Set(context.Background(), guildTokenLock(guildID, hashToken), tokenProvider.maxRequests5Seconds, duration).Err()
 }
 
+const DefaultMaxWorkers = 8
+
 var UnresponsiveCaptureBlacklistDuration = time.Minute * time.Duration(5)
 
 func (tokenProvider *TokenProvider) Run(port string) {
 	r := mux.NewRouter()
 
-	ackTimeoutms := DefaultAckFromClientBotTimeout
-	taskTimeoutms := DefaultBroadcastToClientBotTimeout
+	taskTimeoutms := DefaultCaptureBotTimeout
 
-	ackTimeoutmsStr := os.Getenv("ACK_TIMEOUT_MS")
-	num, err := strconv.ParseInt(ackTimeoutmsStr, 10, 64)
+	taskTimeoutmsStr := os.Getenv("ACK_TIMEOUT_MS")
+	num, err := strconv.ParseInt(taskTimeoutmsStr, 10, 64)
 	if err == nil {
-		ackTimeoutms = time.Millisecond * time.Duration(num)
+		log.Printf("Read from env; using ACK_TIMEOUT_MS=%d\n", num)
+		taskTimeoutms = time.Millisecond * time.Duration(num)
 	}
 
-	taskTimeoutmsStr := os.Getenv("TASK_TIMEOUT_MS")
-	num, err = strconv.ParseInt(taskTimeoutmsStr, 10, 64)
+	maxWorkers := DefaultMaxWorkers
+	maxWorkersStr := os.Getenv("MAX_WORKERS")
+	num, err = strconv.ParseInt(maxWorkersStr, 10, 64)
 	if err == nil {
-		taskTimeoutms = time.Millisecond * time.Duration(num)
+		log.Printf("Read from env; using MAX_WORKERS=%d\n", num)
+		maxWorkers = int(num)
 	}
 
 	r.HandleFunc("/modify/{guildID}/{connectCode}", func(w http.ResponseWriter, r *http.Request) {
@@ -256,7 +253,12 @@ func (tokenProvider *TokenProvider) Run(port string) {
 			return
 		}
 
+		limit := PremiumBotConstraints[userModifications.Premium]
+		tokens := tokenProvider.getAllTokensForGuild(guildID)
+
+		tasksChannel := make(chan UserModify, len(userModifications.Users))
 		wg := sync.WaitGroup{}
+
 		mdsc := discord.MuteDeafenSuccessCounts{
 			Worker:    0,
 			Capture:   0,
@@ -265,111 +267,47 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		}
 		mdscLock := sync.Mutex{}
 
+		//start a handful of workers to handle the tasks
+		for i := 0; i < maxWorkers; i++ {
+			go func() {
+				for request := range tasksChannel {
+					userIdStr := strconv.FormatUint(request.UserID, 10)
+					success := tokenProvider.attemptOnSecondaryTokens(guildID, userIdStr, tokens, limit, request)
+					if success {
+						mdscLock.Lock()
+						mdsc.Worker++
+						mdscLock.Unlock()
+					} else {
+						success = tokenProvider.attemptOnCaptureBot(guildID, connectCode, gid, taskTimeoutms, request)
+						if success {
+							mdscLock.Lock()
+							mdsc.Capture++
+							mdscLock.Unlock()
+						} else {
+							log.Printf("Applying mute=%v, deaf=%v using primary bot\n", request.Mute, request.Deaf)
+							err = discord.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userIdStr, request.Mute, request.Deaf)
+							if err != nil {
+								log.Println(err)
+							} else {
+								mdscLock.Lock()
+								mdsc.Official++
+								mdscLock.Unlock()
+							}
+						}
+					}
+					wg.Done()
+				}
+			}()
+		}
+
 		for _, modifyReq := range userModifications.Users {
 			wg.Add(1)
-
-			limit := PremiumBotConstraints[userModifications.Premium]
-			tokens := tokenProvider.getAllTokensForGuild(guildID)
-
-			go func(request UserModify) {
-				defer wg.Done()
-
-				userIdStr := strconv.FormatUint(request.UserID, 10)
-				if tokens != nil && limit > 0 {
-					sess, hToken := tokenProvider.getAnySession(guildID, tokens, limit)
-					if sess != nil {
-						err := discord.ApplyMuteDeaf(sess, guildID, userIdStr, request.Mute, request.Deaf)
-						if err != nil {
-							log.Println("Failed to apply mute to player with error:")
-							log.Println(err)
-						} else {
-							log.Printf("Successfully applied mute=%v, deaf=%v to User %d using secondary bot: %s\n", request.Mute, request.Deaf, request.UserID, hToken)
-							mdscLock.Lock()
-							mdsc.Worker++
-							mdscLock.Unlock()
-							return
-						}
-					} else {
-						log.Println("No secondary bot tokens found. Trying other methods")
-					}
-				} else {
-					log.Println("Guild has no access to secondary bot tokens; skipping")
-				}
-				//this is cheeky, but use the connect code as part of the lock; don't issue too many requests on the capture client w/ this code
-				if tokenProvider.IncrAndTestGuildTokenComboLock(guildID, connectCode) {
-					//if the secondary token didn't work, then next we try the client-side capture request
-					task := discord.NewModifyTask(gid, request.UserID, discord.NoNickPatchParams{
-						Deaf: request.Deaf,
-						Mute: request.Mute,
-					})
-					jBytes, err := json.Marshal(task)
-					if err != nil {
-						log.Println(err)
-						return
-					} else {
-						acked := make(chan bool)
-						//subscribe to hearing if anyone says "hey, I can handle that task! (multiple brokers)"
-						pubsub := tokenProvider.client.Subscribe(context.Background(), discord.BroadcastTaskAckKey(task.TaskID))
-
-						//wait for an ACK, or for a timeout (nobody said they could handle the task)
-						go tokenProvider.waitForAck(pubsub, ackTimeoutms, acked)
-
-						err := tokenProvider.client.Publish(context.Background(), discord.TasksSubscribeKey(connectCode), jBytes).Err()
-						if err != nil {
-							log.Println("Error in publishing task to " + discord.TasksSubscribeKey(connectCode))
-							log.Println(err)
-						}
-
-						res := <-acked
-						if !res {
-							err := tokenProvider.BlacklistTokenForDuration(guildID, connectCode, UnresponsiveCaptureBlacklistDuration)
-							if err == nil {
-								log.Printf("No ack from capture clients; blacklisting capture client for gamecode \"%s\" for %s\n", connectCode, UnresponsiveCaptureBlacklistDuration.String())
-							}
-							//falls through to using official bot token below
-						} else {
-							acked := make(chan bool)
-							//now we wait for an ack with respect to actually performing the mute
-							pubsub := tokenProvider.client.Subscribe(context.Background(), discord.CompleteTaskAckKey(task.TaskID))
-							go tokenProvider.waitForAck(pubsub, taskTimeoutms, acked)
-							res := <-acked
-							if res {
-								log.Println("Successful mute/deafen using client capture bot!")
-								mdscLock.Lock()
-								mdsc.Capture++
-								mdscLock.Unlock()
-								//hooray! we did the mute with a client token!
-								return
-							} else {
-								err := tokenProvider.BlacklistTokenForDuration(guildID, connectCode, UnresponsiveCaptureBlacklistDuration)
-								if err == nil {
-									log.Printf("No ack from capture clients; blacklisting capture client for gamecode \"%s\" for %s\n", connectCode, UnresponsiveCaptureBlacklistDuration.String())
-								}
-								//falls through to using official bot token below
-							}
-						}
-					}
-				} else {
-					log.Println("Capture client is probably rate-limited. Deferring to main bot instead")
-				}
-				log.Printf("Applying mute=%v, deaf=%v using primary bot\n", request.Mute, request.Deaf)
-				err = discord.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userIdStr, request.Mute, request.Deaf)
-				if err != nil {
-					log.Println(err)
-				}
-				mdscLock.Lock()
-				mdsc.Official++
-				mdscLock.Unlock()
-			}(modifyReq)
+			tasksChannel <- modifyReq
 		}
 		wg.Wait()
-		w.WriteHeader(http.StatusOK)
+		close(tasksChannel)
 
-		//return ANY pending rate limit counters. Doesn't really matter which request they actually occurred on, though
-		RateLimitExceedLock.Lock()
-		mdsc.RateLimit = RateLimitExceedCounter
-		RateLimitExceedCounter = 0
-		RateLimitExceedLock.Unlock()
+		w.WriteHeader(http.StatusOK)
 
 		jbytes, err := json.Marshal(mdsc)
 		if err != nil {
@@ -456,11 +394,72 @@ func (tokenProvider *TokenProvider) Run(port string) {
 	http.ListenAndServe(":"+port, r)
 }
 
+func (tokenProvider *TokenProvider) attemptOnSecondaryTokens(guildID, userID string, tokens []string, limit int, request UserModify) bool {
+	if tokens != nil && limit > 0 {
+		sess, hToken := tokenProvider.getAnySession(guildID, tokens, limit)
+		if sess != nil {
+			err := discord.ApplyMuteDeaf(sess, guildID, userID, request.Mute, request.Deaf)
+			if err != nil {
+				log.Println("Failed to apply mute to player with error:")
+				log.Println(err)
+			} else {
+				log.Printf("Successfully applied mute=%v, deaf=%v to User %d using secondary bot: %s\n", request.Mute, request.Deaf, request.UserID, hToken)
+				return true
+			}
+		} else {
+			log.Println("No secondary bot tokens found. Trying other methods")
+		}
+	} else {
+		log.Println("Guild has no access to secondary bot tokens; skipping")
+	}
+	return false
+}
+
+func (tokenProvider *TokenProvider) attemptOnCaptureBot(guildID, connectCode string, gid uint64, timeout time.Duration, request UserModify) bool {
+	//this is cheeky, but use the connect code as part of the lock; don't issue too many requests on the capture client w/ this code
+	if tokenProvider.IncrAndTestGuildTokenComboLock(guildID, connectCode) {
+		//if the secondary token didn't work, then next we try the client-side capture request
+		task := discord.NewModifyTask(gid, request.UserID, discord.NoNickPatchParams{
+			Deaf: request.Deaf,
+			Mute: request.Mute,
+		})
+		jBytes, err := json.Marshal(task)
+		if err != nil {
+			log.Println(err)
+			return false
+		} else {
+			acked := make(chan bool)
+			//now we wait for an ack with respect to actually performing the mute
+			pubsub := tokenProvider.client.Subscribe(context.Background(), discord.CompleteTaskAckKey(task.TaskID))
+
+			err := tokenProvider.client.Publish(context.Background(), discord.TasksSubscribeKey(connectCode), jBytes).Err()
+			if err != nil {
+				log.Println("Error in publishing task to " + discord.TasksSubscribeKey(connectCode))
+				log.Println(err)
+			} else {
+				go tokenProvider.waitForAck(pubsub, timeout, acked)
+				res := <-acked
+				if res {
+					log.Println("Successful mute/deafen using client capture bot!")
+
+					//hooray! we did the mute with a client token!
+					return true
+				} else {
+					err := tokenProvider.BlacklistTokenForDuration(guildID, connectCode, UnresponsiveCaptureBlacklistDuration)
+					if err == nil {
+						log.Printf("No ack from capture clients; blacklisting capture client for gamecode \"%s\" for %s\n", connectCode, UnresponsiveCaptureBlacklistDuration.String())
+					}
+				}
+			}
+		}
+	} else {
+		log.Println("Capture client is probably rate-limited. Deferring to main bot instead")
+	}
+	return false
+}
+
 func (tokenProvider *TokenProvider) rateLimitEventCallback(sess *discordgo.Session, rl *discordgo.RateLimit) {
 	log.Println(rl.Message)
-	RateLimitExceedLock.Lock()
-	RateLimitExceedCounter++
-	RateLimitExceedLock.Unlock()
 }
 
 func (tokenProvider *TokenProvider) waitForAck(pubsub *redis.PubSub, waitTime time.Duration, result chan<- bool) {
@@ -471,12 +470,12 @@ func (tokenProvider *TokenProvider) waitForAck(pubsub *redis.PubSub, waitTime ti
 	for {
 		select {
 		case <-t.C:
-			result <- false
 			t.Stop()
+			result <- false
 			return
 		case val := <-channel:
-			result <- val.Payload == "true"
 			t.Stop()
+			result <- val.Payload == "true"
 			return
 		}
 	}

@@ -38,11 +38,9 @@ type Broker struct {
 
 	//map of socket IDs to connection codes
 	connections map[string]string
-	//map of task IDs to task channels
-	taskChannels     map[string]chan bool
-	ackKillChannels  map[string]chan bool
-	connectionsLock  sync.RWMutex
-	taskChannelsLock sync.RWMutex
+
+	ackKillChannels map[string]chan bool
+	connectionsLock sync.RWMutex
 }
 
 func NewBroker(redisAddr, redisUser, redisPass string) *Broker {
@@ -53,22 +51,17 @@ func NewBroker(redisAddr, redisUser, redisPass string) *Broker {
 		DB:       0, // use default DB
 	})
 	return &Broker{
-		client:           rdb,
-		connections:      map[string]string{},
-		taskChannels:     map[string]chan bool{},
-		ackKillChannels:  map[string]chan bool{},
-		connectionsLock:  sync.RWMutex{},
-		taskChannelsLock: sync.RWMutex{},
+		client:          rdb,
+		connections:     map[string]string{},
+		ackKillChannels: map[string]chan bool{},
+		connectionsLock: sync.RWMutex{},
 	}
 }
 
 func (broker *Broker) TasksListener(server *socketio.Server, connectCode string, killchan <-chan bool) {
 	pubsub := broker.client.Subscribe(context.Background(), discord.TasksSubscribeKey(connectCode))
-	subKillChan := make(chan bool)
-	taskID := ""
 	log.Println("Task listener OPEN for " + connectCode)
 	defer log.Println("Task listener CLOSE for " + connectCode)
-	defer pubsub.Close()
 	channel := pubsub.Channel()
 	for {
 		select {
@@ -81,50 +74,11 @@ func (broker *Broker) TasksListener(server *socketio.Server, connectCode string,
 				break
 			}
 
-			err = broker.client.Publish(context.Background(), discord.BroadcastTaskAckKey(task.TaskID), "true").Err()
-			if err != nil {
-				log.Println(err)
-			}
-
-			taskChan := make(chan bool)
-
-			broker.taskChannelsLock.Lock()
-			broker.taskChannels[task.TaskID] = taskChan
-			broker.taskChannelsLock.Unlock()
-			taskID = task.TaskID
-
-			go broker.TaskCompletionListener(taskID, taskChan, subKillChan)
-
 			log.Println("Broadcasting " + t.Payload + " to room " + connectCode)
 			server.BroadcastToRoom("/", connectCode, "modify", t.Payload)
 			break
 		case <-killchan:
-			subKillChan <- true //tell the worker to close as well, if relevant
-
-			if taskID != "" {
-				broker.taskChannelsLock.Lock()
-				delete(broker.taskChannels, taskID)
-				broker.taskChannelsLock.Unlock()
-			}
-
-			return
-		}
-	}
-}
-
-//this function waits for a success message, OR, a closure of the channel from higher-up. But either way, we publish to Redis
-func (broker *Broker) TaskCompletionListener(taskID string, taskChan <-chan bool, killChan <-chan bool) {
-	for {
-		select {
-		case t := <-taskChan:
-			msg := "false"
-			if t {
-				msg = "true"
-			}
-			broker.client.Publish(context.Background(), discord.CompleteTaskAckKey(taskID), msg)
-			return
-		case <-killChan:
-			broker.client.Publish(context.Background(), discord.CompleteTaskAckKey(taskID), "false")
+			pubsub.Close()
 			return
 		}
 	}
@@ -183,21 +137,13 @@ func (broker *Broker) Start(port string) {
 	server.OnEvent("/", "taskFailed", func(s socketio.Conn, msg string) {
 		log.Printf("Received failure for task ID: \"%s\"", msg)
 
-		broker.taskChannelsLock.RLock()
-		if tChan, ok := broker.taskChannels[msg]; ok {
-			tChan <- false
-		}
-		broker.taskChannelsLock.RUnlock()
+		broker.client.Publish(context.Background(), discord.CompleteTaskAckKey(msg), "false")
 	})
 
 	server.OnEvent("/", "taskComplete", func(s socketio.Conn, msg string) {
 		log.Printf("Received success for task ID: \"%s\"", msg)
 
-		broker.taskChannelsLock.RLock()
-		if tChan, ok := broker.taskChannels[msg]; ok {
-			tChan <- true
-		}
-		broker.taskChannelsLock.RUnlock()
+		broker.client.Publish(context.Background(), discord.CompleteTaskAckKey(msg), "true")
 	})
 
 	server.OnEvent("/", "lobby", func(s socketio.Conn, msg string) {
