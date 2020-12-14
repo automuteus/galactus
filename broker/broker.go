@@ -22,7 +22,7 @@ const ConnectCodeLength = 8
 type Broker struct {
 	client *redis.Client
 
-	//map of socket IDs to connection codes
+	// map of socket IDs to connection codes
 	connections map[string]string
 
 	ackKillChannels map[string]chan bool
@@ -102,13 +102,13 @@ func (broker *Broker) Start(port string) {
 		}
 	})
 
-	//only join the room for the connect code once we ensure that the bot actually connects with a valid discord session
+	// only join the room for the connect code once we ensure that the bot actually connects with a valid discord session
 	server.OnEvent("/", "botID", func(s socketio.Conn, msg int64) {
 		log.Printf("Received bot ID: \"%d\"", msg)
 
 		broker.connectionsLock.RLock()
 		if code, ok := broker.connections[s.ID()]; ok {
-			//this socket is now listening for mutes that can be applied via that connect code
+			// this socket is now listening for mutes that can be applied via that connect code
 			s.Join(code)
 			killChan := broker.ackKillChannels[s.ID()]
 			if killChan != nil {
@@ -135,7 +135,7 @@ func (broker *Broker) Start(port string) {
 	server.OnEvent("/", "lobby", func(s socketio.Conn, msg string) {
 		log.Println("lobby:", msg)
 
-		//validation
+		// validation
 		var lobby game.Lobby
 		err := json.Unmarshal([]byte(msg), &lobby)
 		if err != nil {
@@ -170,7 +170,7 @@ func (broker *Broker) Start(port string) {
 					log.Println(err)
 				}
 				err = broker.client.Expire(context.Background(), rediskey.RoomCodesForConnCode(cCode), time.Minute*15).Err()
-				if err != redis.Nil && err != nil {
+				if !errors.Is(err, redis.Nil) && err != nil {
 					log.Println(err)
 				}
 			}
@@ -241,6 +241,8 @@ func (broker *Broker) Start(port string) {
 		activeGames := rediskey.GetActiveGames(context.Background(), broker.client, 900)
 		version, commit := rediskey.GetVersionAndCommit(context.Background(), broker.client)
 		totalGuilds := rediskey.GetGuildCounter(context.Background(), broker.client)
+		totalUsers := rediskey.GetTotalUsers(context.Background(), broker.client)
+		totalGames := rediskey.GetTotalGames(context.Background(), broker.client)
 
 		data := map[string]interface{}{
 			"version":           version,
@@ -248,6 +250,8 @@ func (broker *Broker) Start(port string) {
 			"totalGuilds":       totalGuilds,
 			"activeConnections": activeConns,
 			"activeGames":       activeGames,
+			"totalUsers":        totalUsers,
+			"totalGames":        totalGames,
 		}
 
 		jsonBytes, err := json.Marshal(data)
@@ -267,7 +271,7 @@ func (broker *Broker) Start(port string) {
 		}
 
 		key, err := broker.client.Get(context.Background(), rediskey.RoomCodesForConnCode(conncode)).Result()
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
