@@ -3,8 +3,10 @@ package broker
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"github.com/automuteus/galactus/discord"
+	"errors"
+	"github.com/automuteus/utils/pkg/game"
+	"github.com/automuteus/utils/pkg/rediskey"
+	"github.com/automuteus/utils/pkg/task"
 	"github.com/go-redis/redis/v8"
 	socketio "github.com/googollee/go-socket.io"
 	"github.com/gorilla/mux"
@@ -17,32 +19,14 @@ import (
 
 const ConnectCodeLength = 8
 
-var ctx = context.Background()
-
-func activeGamesCode() string {
-	return "automuteus:games"
-}
-
-type GameLobby struct {
-	LobbyCode string `json:"LobbyCode"`
-	Region    int    `json:"Region"`
-	PlayMap   int    `json:"Map"`
-}
-
-func roomCodesForConnCodeKey(connCode string) string {
-	return "automuteus:roomcode:" + connCode
-}
-
 type Broker struct {
 	client *redis.Client
 
-	//map of socket IDs to connection codes
+	// map of socket IDs to connection codes
 	connections map[string]string
-	//map of task IDs to task channels
-	taskChannels     map[string]chan bool
-	ackKillChannels  map[string]chan bool
-	connectionsLock  sync.RWMutex
-	taskChannelsLock sync.RWMutex
+
+	ackKillChannels map[string]chan bool
+	connectionsLock sync.RWMutex
 }
 
 func NewBroker(redisAddr, redisUser, redisPass string) *Broker {
@@ -53,78 +37,34 @@ func NewBroker(redisAddr, redisUser, redisPass string) *Broker {
 		DB:       0, // use default DB
 	})
 	return &Broker{
-		client:           rdb,
-		connections:      map[string]string{},
-		taskChannels:     map[string]chan bool{},
-		ackKillChannels:  map[string]chan bool{},
-		connectionsLock:  sync.RWMutex{},
-		taskChannelsLock: sync.RWMutex{},
+		client:          rdb,
+		connections:     map[string]string{},
+		ackKillChannels: map[string]chan bool{},
+		connectionsLock: sync.RWMutex{},
 	}
 }
 
 func (broker *Broker) TasksListener(server *socketio.Server, connectCode string, killchan <-chan bool) {
-	pubsub := broker.client.Subscribe(context.Background(), discord.TasksSubscribeKey(connectCode))
-	subKillChan := make(chan bool)
-	taskID := ""
+	pubsub := broker.client.Subscribe(context.Background(), rediskey.TasksSubscribe(connectCode))
 	log.Println("Task listener OPEN for " + connectCode)
 	defer log.Println("Task listener CLOSE for " + connectCode)
-	defer pubsub.Close()
 	channel := pubsub.Channel()
 	for {
 		select {
 		case t := <-channel:
-			task := discord.ModifyTask{}
+			taskObj := task.ModifyTask{}
 
-			err := json.Unmarshal([]byte(t.Payload), &task)
+			err := json.Unmarshal([]byte(t.Payload), &taskObj)
 			if err != nil {
 				log.Println(err)
 				break
 			}
 
-			err = broker.client.Publish(context.Background(), discord.BroadcastTaskAckKey(task.TaskID), "true").Err()
-			if err != nil {
-				log.Println(err)
-			}
-
-			taskChan := make(chan bool)
-
-			broker.taskChannelsLock.Lock()
-			broker.taskChannels[task.TaskID] = taskChan
-			broker.taskChannelsLock.Unlock()
-			taskID = task.TaskID
-
-			go broker.TaskCompletionListener(taskID, taskChan, subKillChan)
-
 			log.Println("Broadcasting " + t.Payload + " to room " + connectCode)
 			server.BroadcastToRoom("/", connectCode, "modify", t.Payload)
 			break
 		case <-killchan:
-			subKillChan <- true //tell the worker to close as well, if relevant
-
-			if taskID != "" {
-				broker.taskChannelsLock.Lock()
-				delete(broker.taskChannels, taskID)
-				broker.taskChannelsLock.Unlock()
-			}
-
-			return
-		}
-	}
-}
-
-//this function waits for a success message, OR, a closure of the channel from higher-up. But either way, we publish to Redis
-func (broker *Broker) TaskCompletionListener(taskID string, taskChan <-chan bool, killChan <-chan bool) {
-	for {
-		select {
-		case t := <-taskChan:
-			msg := "false"
-			if t {
-				msg = "true"
-			}
-			broker.client.Publish(context.Background(), discord.CompleteTaskAckKey(taskID), msg)
-			return
-		case <-killChan:
-			broker.client.Publish(context.Background(), discord.CompleteTaskAckKey(taskID), "false")
+			pubsub.Close()
 			return
 		}
 	}
@@ -154,21 +94,21 @@ func (broker *Broker) Start(port string) {
 			broker.ackKillChannels[s.ID()] = killChannel
 			broker.connectionsLock.Unlock()
 
-			err := PushJob(ctx, broker.client, msg, Connection, "true")
+			err := task.PushJob(context.Background(), broker.client, msg, task.ConnectionJob, "true")
 			if err != nil {
 				log.Println(err)
 			}
-			go broker.AckWorker(ctx, msg, killChannel)
+			go broker.AckWorker(context.Background(), msg, killChannel)
 		}
 	})
 
-	//only join the room for the connect code once we ensure that the bot actually connects with a valid discord session
+	// only join the room for the connect code once we ensure that the bot actually connects with a valid discord session
 	server.OnEvent("/", "botID", func(s socketio.Conn, msg int64) {
 		log.Printf("Received bot ID: \"%d\"", msg)
 
 		broker.connectionsLock.RLock()
 		if code, ok := broker.connections[s.ID()]; ok {
-			//this socket is now listening for mutes that can be applied via that connect code
+			// this socket is now listening for mutes that can be applied via that connect code
 			s.Join(code)
 			killChan := broker.ackKillChannels[s.ID()]
 			if killChan != nil {
@@ -183,39 +123,31 @@ func (broker *Broker) Start(port string) {
 	server.OnEvent("/", "taskFailed", func(s socketio.Conn, msg string) {
 		log.Printf("Received failure for task ID: \"%s\"", msg)
 
-		broker.taskChannelsLock.RLock()
-		if tChan, ok := broker.taskChannels[msg]; ok {
-			tChan <- false
-		}
-		broker.taskChannelsLock.RUnlock()
+		broker.client.Publish(context.Background(), rediskey.CompleteTask(msg), "false")
 	})
 
 	server.OnEvent("/", "taskComplete", func(s socketio.Conn, msg string) {
 		log.Printf("Received success for task ID: \"%s\"", msg)
 
-		broker.taskChannelsLock.RLock()
-		if tChan, ok := broker.taskChannels[msg]; ok {
-			tChan <- true
-		}
-		broker.taskChannelsLock.RUnlock()
+		broker.client.Publish(context.Background(), rediskey.CompleteTask(msg), "true")
 	})
 
 	server.OnEvent("/", "lobby", func(s socketio.Conn, msg string) {
 		log.Println("lobby:", msg)
 
-		//validation
-		var lobby GameLobby
+		// validation
+		var lobby game.Lobby
 		err := json.Unmarshal([]byte(msg), &lobby)
 		if err != nil {
 			log.Println(err)
 		} else {
 			broker.connectionsLock.RLock()
 			if cCode, ok := broker.connections[s.ID()]; ok {
-				err := PushJob(ctx, broker.client, cCode, Lobby, msg)
+				err := task.PushJob(context.Background(), broker.client, cCode, task.LobbyJob, msg)
 				if err != nil {
 					log.Println(err)
 				}
-				err = broker.client.Set(context.Background(), roomCodesForConnCodeKey(cCode), lobby.LobbyCode, time.Minute*15).Err()
+				err = broker.client.Set(context.Background(), rediskey.RoomCodesForConnCode(cCode), lobby.LobbyCode, time.Minute*15).Err()
 				if err != nil {
 					log.Println(err)
 				} else {
@@ -233,12 +165,12 @@ func (broker *Broker) Start(port string) {
 		} else {
 			broker.connectionsLock.RLock()
 			if cCode, ok := broker.connections[s.ID()]; ok {
-				err := PushJob(ctx, broker.client, cCode, State, msg)
+				err := task.PushJob(context.Background(), broker.client, cCode, task.StateJob, msg)
 				if err != nil {
 					log.Println(err)
 				}
-				err = broker.client.Expire(context.Background(), roomCodesForConnCodeKey(cCode), time.Minute*15).Err()
-				if err != redis.Nil && err != nil {
+				err = broker.client.Expire(context.Background(), rediskey.RoomCodesForConnCode(cCode), time.Minute*15).Err()
+				if !errors.Is(err, redis.Nil) && err != nil {
 					log.Println(err)
 				}
 			}
@@ -250,12 +182,12 @@ func (broker *Broker) Start(port string) {
 
 		broker.connectionsLock.RLock()
 		if cCode, ok := broker.connections[s.ID()]; ok {
-			err := PushJob(ctx, broker.client, cCode, Player, msg)
+			err := task.PushJob(context.Background(), broker.client, cCode, task.PlayerJob, msg)
 			if err != nil {
 				log.Println(err)
 			}
-			err = broker.client.Expire(context.Background(), roomCodesForConnCodeKey(cCode), time.Minute*15).Err()
-			if err != redis.Nil && err != nil {
+			err = broker.client.Expire(context.Background(), rediskey.RoomCodesForConnCode(cCode), time.Minute*15).Err()
+			if !errors.Is(err, redis.Nil) && err != nil {
 				log.Println(err)
 			}
 		}
@@ -264,7 +196,7 @@ func (broker *Broker) Start(port string) {
 	server.OnEvent("/", "gameover", func(s socketio.Conn, msg string) {
 		broker.connectionsLock.RLock()
 		if cCode, ok := broker.connections[s.ID()]; ok {
-			err := PushJob(ctx, broker.client, cCode, GameOver, msg)
+			err := task.PushJob(context.Background(), broker.client, cCode, task.GameOverJob, msg)
 			if err != nil {
 				log.Println(err)
 			}
@@ -279,7 +211,7 @@ func (broker *Broker) Start(port string) {
 
 		broker.connectionsLock.RLock()
 		if cCode, ok := broker.connections[s.ID()]; ok {
-			err := PushJob(ctx, broker.client, cCode, Connection, "false")
+			err := task.PushJob(context.Background(), broker.client, cCode, task.ConnectionJob, "false")
 			if err != nil {
 				log.Println(err)
 			}
@@ -305,10 +237,12 @@ func (broker *Broker) Start(port string) {
 		activeConns := len(broker.connections)
 		broker.connectionsLock.RUnlock()
 
-		//default to listing active games in the last 15 mins
-		activeGames := GetActiveGames(broker.client, 900)
-		version, commit := GetVersionAndCommit(broker.client)
-		totalGuilds := GetGuildCounter(broker.client)
+		// default to listing active games in the last 15 mins
+		activeGames := rediskey.GetActiveGames(context.Background(), broker.client, 900)
+		version, commit := rediskey.GetVersionAndCommit(context.Background(), broker.client)
+		totalGuilds := rediskey.GetGuildCounter(context.Background(), broker.client)
+		totalUsers := rediskey.GetTotalUsers(context.Background(), broker.client)
+		totalGames := rediskey.GetTotalGames(context.Background(), broker.client)
 
 		data := map[string]interface{}{
 			"version":           version,
@@ -316,6 +250,8 @@ func (broker *Broker) Start(port string) {
 			"totalGuilds":       totalGuilds,
 			"activeConnections": activeConns,
 			"activeGames":       activeGames,
+			"totalUsers":        totalUsers,
+			"totalGames":        totalGames,
 		}
 
 		jsonBytes, err := json.Marshal(data)
@@ -334,8 +270,8 @@ func (broker *Broker) Start(port string) {
 			return
 		}
 
-		key, err := broker.client.Get(context.Background(), roomCodesForConnCodeKey(conncode)).Result()
-		if err == redis.Nil {
+		key, err := broker.client.Get(context.Background(), rediskey.RoomCodesForConnCode(conncode)).Result()
+		if errors.Is(err, redis.Nil) {
 			w.WriteHeader(http.StatusNotFound)
 			return
 		}
@@ -348,7 +284,6 @@ func (broker *Broker) Start(port string) {
 			w.WriteHeader(http.StatusOK)
 			w.Write(jbytes)
 		}
-		return
 	})
 	log.Printf("Message broker is running on port %s...\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, router))
@@ -368,63 +303,11 @@ func errorResponse(w http.ResponseWriter) {
 	} else {
 		w.Write(jbytes)
 	}
-	return
 }
 
-func totalGuildsKey() string {
-	return "automuteus:count:guilds"
-}
-
-//TODO these are duplicated in the main repo and here! Eek!
-func versionKey() string {
-	return "automuteus:version"
-}
-
-func commitKey() string {
-	return "automuteus:commit"
-}
-
-///////
-
-func GetVersionAndCommit(client *redis.Client) (string, string) {
-	v, err := client.Get(ctx, versionKey()).Result()
-	if err != nil {
-		log.Println(err)
-	}
-	c, err := client.Get(ctx, commitKey()).Result()
-	if err != nil {
-		log.Println(err)
-	}
-	return v, c
-}
-
-func GetGuildCounter(client *redis.Client) int64 {
-	count, err := client.SCard(ctx, totalGuildsKey()).Result()
-	if err != nil {
-		log.Println(err)
-		return 0
-	}
-	return count
-}
-
-func GetActiveGames(client *redis.Client, secs int64) int64 {
-	now := time.Now()
-	before := now.Add(-(time.Second * time.Duration(secs)))
-	count, err := client.ZCount(ctx, activeGamesCode(), fmt.Sprintf("%d", before.Unix()), fmt.Sprintf("%d", now.Unix())).Result()
-	if err != nil {
-		log.Println(err)
-		return 0
-	}
-	return count
-}
-
-func RemoveActiveGame(client *redis.Client, connectCode string) {
-	client.ZRem(ctx, activeGamesCode(), connectCode)
-}
-
-//anytime a bot "acks", then push a notification
+// anytime a bot "acks", then push a notification
 func (broker *Broker) AckWorker(ctx context.Context, connCode string, killChan <-chan bool) {
-	pubsub := AckSubscribe(ctx, broker.client, connCode)
+	pubsub := task.AckSubscribe(ctx, broker.client, connCode)
 	channel := pubsub.Channel()
 	defer pubsub.Close()
 
@@ -433,11 +316,10 @@ func (broker *Broker) AckWorker(ctx context.Context, connCode string, killChan <
 		case <-killChan:
 			return
 		case <-channel:
-			err := PushJob(ctx, broker.client, connCode, Connection, "true")
+			err := task.PushJob(ctx, broker.client, connCode, task.ConnectionJob, "true")
 			if err != nil {
 				log.Println(err)
 			}
-			//notify(ctx, broker.client, connCode)
 			break
 		}
 	}

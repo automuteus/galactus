@@ -5,7 +5,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"github.com/automuteus/galactus/discord"
+	"errors"
+	"github.com/automuteus/utils/pkg/premium"
+	"github.com/automuteus/utils/pkg/rediskey"
+	"github.com/automuteus/utils/pkg/task"
+	"github.com/automuteus/utils/pkg/token"
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
@@ -19,18 +23,16 @@ import (
 	"time"
 )
 
-const DefaultBroadcastToClientBotTimeout = time.Millisecond * 500
-const DefaultAckFromClientBotTimeout = time.Second
-
-var RateLimitExceedCounter = int64(0)
-var RateLimitExceedLock = sync.Mutex{}
-
-var DefaultIdentifyThresholds = discord.IdentifyThresholds{
-	HardWindow:    time.Hour * 24,
-	HardThreshold: 950,
-	SoftWindow:    time.Hour * 12,
-	SoftThreshold: 500,
+var PremiumBotConstraints = map[premium.Tier]int{
+	0: 0,
+	1: 0,   // Free and Bronze have no premium bots
+	2: 1,   // Silver has 1 bot
+	3: 3,   // Gold has 3 bots
+	4: 10,  // Platinum (TBD)
+	5: 100, // Selfhost; 100 bots(!)
 }
+
+const DefaultCaptureBotTimeout = time.Second
 
 var ctx = context.Background()
 
@@ -38,22 +40,10 @@ type TokenProvider struct {
 	client         *redis.Client
 	primarySession *discordgo.Session
 
-	//maps hashed tokens to active discord sessions
+	// maps hashed tokens to active discord sessions
 	activeSessions      map[string]*discordgo.Session
 	maxRequests5Seconds int64
 	sessionLock         sync.RWMutex
-}
-
-func guildTokensKey(guildID string) string {
-	return "automuteus:tokens:guild:" + guildID
-}
-
-func allTokensKey() string {
-	return "automuteus:alltokens"
-}
-
-func guildTokenLock(guildID, hToken string) string {
-	return "automuteus:muterequest:lock:" + hToken + ":" + guildID
 }
 
 func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string, maxReq int64) *TokenProvider {
@@ -64,12 +54,8 @@ func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string, maxReq i
 		DB:       0, // use default DB
 	})
 
-	if discord.IsTokenLockedOut(rdb, botToken, DefaultIdentifyThresholds) {
-		log.Fatal("BOT HAS EXCEEDED TOKEN LOCKOUT ON PRIMARY TOKEN")
-	}
-
-	discord.WaitForToken(rdb, botToken)
-	discord.MarkIdentifyAndLockForToken(rdb, botToken)
+	token.WaitForToken(rdb, botToken)
+	token.LockForToken(rdb, botToken)
 
 	dg, err := discordgo.New("Bot " + botToken)
 	if err != nil {
@@ -103,13 +89,10 @@ func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string, maxReq i
 
 func rateLimitEventCallback(sess *discordgo.Session, rl *discordgo.RateLimit) {
 	log.Println(rl.Message)
-	RateLimitExceedLock.Lock()
-	RateLimitExceedCounter++
-	RateLimitExceedLock.Unlock()
 }
 
 func (tokenProvider *TokenProvider) PopulateAndStartSessions() {
-	keys, err := tokenProvider.client.HGetAll(ctx, allTokensKey()).Result()
+	keys, err := tokenProvider.client.HGetAll(ctx, rediskey.AllTokensHSet).Result()
 	if err != nil {
 		log.Println(err)
 		return
@@ -120,19 +103,15 @@ func (tokenProvider *TokenProvider) PopulateAndStartSessions() {
 	}
 }
 
-func (tokenProvider *TokenProvider) openAndStartSessionWithToken(token string) bool {
-	k := hashToken(token)
+func (tokenProvider *TokenProvider) openAndStartSessionWithToken(botToken string) bool {
+	k := hashToken(botToken)
 	tokenProvider.sessionLock.Lock()
 	defer tokenProvider.sessionLock.Unlock()
 
 	if _, ok := tokenProvider.activeSessions[k]; !ok {
-		if discord.IsTokenLockedOut(tokenProvider.client, token, DefaultIdentifyThresholds) {
-			log.Println("Token <redacted> is locked out!")
-			return false
-		}
-		discord.WaitForToken(tokenProvider.client, token)
-		discord.MarkIdentifyAndLockForToken(tokenProvider.client, token)
-		sess, err := discordgo.New("Bot " + token)
+		token.WaitForToken(tokenProvider.client, botToken)
+		token.LockForToken(tokenProvider.client, botToken)
+		sess, err := discordgo.New("Bot " + botToken)
 		if err != nil {
 			log.Println(err)
 			return false
@@ -143,7 +122,7 @@ func (tokenProvider *TokenProvider) openAndStartSessionWithToken(token string) b
 			log.Println(err)
 			return false
 		}
-		//associates the guilds with this token to be used for requests
+		// associates the guilds with this token to be used for requests
 		sess.AddHandler(tokenProvider.newGuild(k))
 		log.Println("Opened session on startup for " + k)
 		tokenProvider.activeSessions[k] = sess
@@ -153,7 +132,7 @@ func (tokenProvider *TokenProvider) openAndStartSessionWithToken(token string) b
 }
 
 func (tokenProvider *TokenProvider) getAllTokensForGuild(guildID string) []string {
-	hTokens, err := tokenProvider.client.SMembers(context.Background(), guildTokensKey(guildID)).Result()
+	hTokens, err := tokenProvider.client.SMembers(context.Background(), rediskey.GuildTokensKey(guildID)).Result()
 	if err != nil {
 		return nil
 	}
@@ -168,14 +147,14 @@ func (tokenProvider *TokenProvider) getAnySession(guildID string, tokens []strin
 		if i == limit {
 			return nil, ""
 		}
-		//if this token isn't potentially rate-limited
+		// if this token isn't potentially rate-limited
 		if tokenProvider.IncrAndTestGuildTokenComboLock(guildID, hToken) {
-			if sess, ok := tokenProvider.activeSessions[hToken]; ok {
+			sess, ok := tokenProvider.activeSessions[hToken]
+			if ok {
 				return sess, hToken
-			} else {
-				//remove this key from our records and keep going
-				tokenProvider.client.SRem(context.Background(), guildTokensKey(guildID), hToken)
 			}
+			// remove this key from our records and keep going
+			tokenProvider.client.SRem(context.Background(), rediskey.GuildTokensKey(guildID), hToken)
 		} else {
 			log.Println("Secondary token is potentially rate-limited. Skipping")
 		}
@@ -185,7 +164,7 @@ func (tokenProvider *TokenProvider) getAnySession(guildID string, tokens []strin
 }
 
 func (tokenProvider *TokenProvider) IncrAndTestGuildTokenComboLock(guildID, hashToken string) bool {
-	i, err := tokenProvider.client.Incr(context.Background(), guildTokenLock(guildID, hashToken)).Result()
+	i, err := tokenProvider.client.Incr(context.Background(), rediskey.GuildTokenLock(guildID, hashToken)).Result()
 	if err != nil {
 		log.Println(err)
 	}
@@ -195,7 +174,7 @@ func (tokenProvider *TokenProvider) IncrAndTestGuildTokenComboLock(guildID, hash
 		return false
 	}
 
-	err = tokenProvider.client.Expire(context.Background(), guildTokenLock(guildID, hashToken), time.Second*5).Err()
+	err = tokenProvider.client.Expire(context.Background(), rediskey.GuildTokenLock(guildID, hashToken), time.Second*5).Err()
 	if err != nil {
 		log.Println(err)
 	}
@@ -204,27 +183,31 @@ func (tokenProvider *TokenProvider) IncrAndTestGuildTokenComboLock(guildID, hash
 }
 
 func (tokenProvider *TokenProvider) BlacklistTokenForDuration(guildID, hashToken string, duration time.Duration) error {
-	return tokenProvider.client.Set(context.Background(), guildTokenLock(guildID, hashToken), tokenProvider.maxRequests5Seconds, duration).Err()
+	return tokenProvider.client.Set(context.Background(), rediskey.GuildTokenLock(guildID, hashToken), tokenProvider.maxRequests5Seconds, duration).Err()
 }
+
+const DefaultMaxWorkers = 8
 
 var UnresponsiveCaptureBlacklistDuration = time.Minute * time.Duration(5)
 
 func (tokenProvider *TokenProvider) Run(port string) {
 	r := mux.NewRouter()
 
-	ackTimeoutms := DefaultAckFromClientBotTimeout
-	taskTimeoutms := DefaultBroadcastToClientBotTimeout
+	taskTimeoutms := DefaultCaptureBotTimeout
 
-	ackTimeoutmsStr := os.Getenv("ACK_TIMEOUT_MS")
-	num, err := strconv.ParseInt(ackTimeoutmsStr, 10, 64)
+	taskTimeoutmsStr := os.Getenv("ACK_TIMEOUT_MS")
+	num, err := strconv.ParseInt(taskTimeoutmsStr, 10, 64)
 	if err == nil {
-		ackTimeoutms = time.Millisecond * time.Duration(num)
+		log.Printf("Read from env; using ACK_TIMEOUT_MS=%d\n", num)
+		taskTimeoutms = time.Millisecond * time.Duration(num)
 	}
 
-	taskTimeoutmsStr := os.Getenv("TASK_TIMEOUT_MS")
-	num, err = strconv.ParseInt(taskTimeoutmsStr, 10, 64)
+	maxWorkers := DefaultMaxWorkers
+	maxWorkersStr := os.Getenv("MAX_WORKERS")
+	num, err = strconv.ParseInt(maxWorkersStr, 10, 64)
 	if err == nil {
-		taskTimeoutms = time.Millisecond * time.Duration(num)
+		log.Printf("Read from env; using MAX_WORKERS=%d\n", num)
+		maxWorkers = int(num)
 	}
 
 	r.HandleFunc("/modify/{guildID}/{connectCode}", func(w http.ResponseWriter, r *http.Request) {
@@ -247,7 +230,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		}
 		defer r.Body.Close()
 
-		userModifications := UserModifyRequest{}
+		userModifications := task.UserModifyRequest{}
 		err = json.Unmarshal(body, &userModifications)
 		if err != nil {
 			log.Println(err)
@@ -256,8 +239,13 @@ func (tokenProvider *TokenProvider) Run(port string) {
 			return
 		}
 
+		limit := PremiumBotConstraints[userModifications.Premium]
+		tokens := tokenProvider.getAllTokensForGuild(guildID)
+
+		tasksChannel := make(chan task.UserModify, len(userModifications.Users))
 		wg := sync.WaitGroup{}
-		mdsc := discord.MuteDeafenSuccessCounts{
+
+		mdsc := task.MuteDeafenSuccessCounts{
 			Worker:    0,
 			Capture:   0,
 			Official:  0,
@@ -265,111 +253,47 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		}
 		mdscLock := sync.Mutex{}
 
+		// start a handful of workers to handle the tasks
+		for i := 0; i < maxWorkers; i++ {
+			go func() {
+				for request := range tasksChannel {
+					userIDStr := strconv.FormatUint(request.UserID, 10)
+					success := tokenProvider.attemptOnSecondaryTokens(guildID, userIDStr, tokens, limit, request)
+					if success {
+						mdscLock.Lock()
+						mdsc.Worker++
+						mdscLock.Unlock()
+					} else {
+						success = tokenProvider.attemptOnCaptureBot(guildID, connectCode, gid, taskTimeoutms, request)
+						if success {
+							mdscLock.Lock()
+							mdsc.Capture++
+							mdscLock.Unlock()
+						} else {
+							log.Printf("Applying mute=%v, deaf=%v using primary bot\n", request.Mute, request.Deaf)
+							err = task.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userIDStr, request.Mute, request.Deaf)
+							if err != nil {
+								log.Println(err)
+							} else {
+								mdscLock.Lock()
+								mdsc.Official++
+								mdscLock.Unlock()
+							}
+						}
+					}
+					wg.Done()
+				}
+			}()
+		}
+
 		for _, modifyReq := range userModifications.Users {
 			wg.Add(1)
-
-			limit := PremiumBotConstraints[userModifications.Premium]
-			tokens := tokenProvider.getAllTokensForGuild(guildID)
-
-			go func(request UserModify) {
-				defer wg.Done()
-
-				userIdStr := strconv.FormatUint(request.UserID, 10)
-				if tokens != nil && limit > 0 {
-					sess, hToken := tokenProvider.getAnySession(guildID, tokens, limit)
-					if sess != nil {
-						err := discord.ApplyMuteDeaf(sess, guildID, userIdStr, request.Mute, request.Deaf)
-						if err != nil {
-							log.Println("Failed to apply mute to player with error:")
-							log.Println(err)
-						} else {
-							log.Printf("Successfully applied mute=%v, deaf=%v to User %d using secondary bot: %s\n", request.Mute, request.Deaf, request.UserID, hToken)
-							mdscLock.Lock()
-							mdsc.Worker++
-							mdscLock.Unlock()
-							return
-						}
-					} else {
-						log.Println("No secondary bot tokens found. Trying other methods")
-					}
-				} else {
-					log.Println("Guild has no access to secondary bot tokens; skipping")
-				}
-				//this is cheeky, but use the connect code as part of the lock; don't issue too many requests on the capture client w/ this code
-				if tokenProvider.IncrAndTestGuildTokenComboLock(guildID, connectCode) {
-					//if the secondary token didn't work, then next we try the client-side capture request
-					task := discord.NewModifyTask(gid, request.UserID, discord.NoNickPatchParams{
-						Deaf: request.Deaf,
-						Mute: request.Mute,
-					})
-					jBytes, err := json.Marshal(task)
-					if err != nil {
-						log.Println(err)
-						return
-					} else {
-						acked := make(chan bool)
-						//subscribe to hearing if anyone says "hey, I can handle that task! (multiple brokers)"
-						pubsub := tokenProvider.client.Subscribe(context.Background(), discord.BroadcastTaskAckKey(task.TaskID))
-
-						//wait for an ACK, or for a timeout (nobody said they could handle the task)
-						go tokenProvider.waitForAck(pubsub, ackTimeoutms, acked)
-
-						err := tokenProvider.client.Publish(context.Background(), discord.TasksSubscribeKey(connectCode), jBytes).Err()
-						if err != nil {
-							log.Println("Error in publishing task to " + discord.TasksSubscribeKey(connectCode))
-							log.Println(err)
-						}
-
-						res := <-acked
-						if !res {
-							err := tokenProvider.BlacklistTokenForDuration(guildID, connectCode, UnresponsiveCaptureBlacklistDuration)
-							if err == nil {
-								log.Printf("No ack from capture clients; blacklisting capture client for gamecode \"%s\" for %s\n", connectCode, UnresponsiveCaptureBlacklistDuration.String())
-							}
-							//falls through to using official bot token below
-						} else {
-							acked := make(chan bool)
-							//now we wait for an ack with respect to actually performing the mute
-							pubsub := tokenProvider.client.Subscribe(context.Background(), discord.CompleteTaskAckKey(task.TaskID))
-							go tokenProvider.waitForAck(pubsub, taskTimeoutms, acked)
-							res := <-acked
-							if res {
-								log.Println("Successful mute/deafen using client capture bot!")
-								mdscLock.Lock()
-								mdsc.Capture++
-								mdscLock.Unlock()
-								//hooray! we did the mute with a client token!
-								return
-							} else {
-								err := tokenProvider.BlacklistTokenForDuration(guildID, connectCode, UnresponsiveCaptureBlacklistDuration)
-								if err == nil {
-									log.Printf("No ack from capture clients; blacklisting capture client for gamecode \"%s\" for %s\n", connectCode, UnresponsiveCaptureBlacklistDuration.String())
-								}
-								//falls through to using official bot token below
-							}
-						}
-					}
-				} else {
-					log.Println("Capture client is probably rate-limited. Deferring to main bot instead")
-				}
-				log.Printf("Applying mute=%v, deaf=%v using primary bot\n", request.Mute, request.Deaf)
-				err = discord.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userIdStr, request.Mute, request.Deaf)
-				if err != nil {
-					log.Println(err)
-				}
-				mdscLock.Lock()
-				mdsc.Official++
-				mdscLock.Unlock()
-			}(modifyReq)
+			tasksChannel <- modifyReq
 		}
 		wg.Wait()
-		w.WriteHeader(http.StatusOK)
+		close(tasksChannel)
 
-		//return ANY pending rate limit counters. Doesn't really matter which request they actually occurred on, though
-		RateLimitExceedLock.Lock()
-		mdsc.RateLimit = RateLimitExceedCounter
-		RateLimitExceedCounter = 0
-		RateLimitExceedLock.Unlock()
+		w.WriteHeader(http.StatusOK)
 
 		jbytes, err := json.Marshal(mdsc)
 		if err != nil {
@@ -380,7 +304,6 @@ func (tokenProvider *TokenProvider) Run(port string) {
 				log.Println(err)
 			}
 		}
-		return
 	}).Methods("POST")
 
 	r.HandleFunc("/addtoken", func(w http.ResponseWriter, r *http.Request) {
@@ -393,10 +316,10 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		}
 		defer r.Body.Close()
 
-		token := string(body)
-		log.Println(token)
+		botToken := string(body)
+		log.Println(botToken)
 
-		k := hashToken(token)
+		k := hashToken(botToken)
 		log.Println(k)
 		tokenProvider.sessionLock.RLock()
 		if _, ok := tokenProvider.activeSessions[k]; ok {
@@ -408,13 +331,9 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		}
 		tokenProvider.sessionLock.RUnlock()
 
-		if discord.IsTokenLockedOut(tokenProvider.client, token, DefaultIdentifyThresholds) {
-			log.Println("Token <redacted> is locked out!")
-			return
-		}
-		discord.WaitForToken(tokenProvider.client, token)
-		discord.MarkIdentifyAndLockForToken(tokenProvider.client, token)
-		sess, err := discordgo.New("Bot " + token)
+		token.WaitForToken(tokenProvider.client, botToken)
+		token.LockForToken(tokenProvider.client, botToken)
+		sess, err := discordgo.New("Bot " + botToken)
 		if err != nil {
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte(err.Error()))
@@ -432,15 +351,15 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		tokenProvider.activeSessions[k] = sess
 		tokenProvider.sessionLock.Unlock()
 
-		err = tokenProvider.client.HSet(ctx, allTokensKey(), k, token).Err()
+		err = tokenProvider.client.HSet(ctx, rediskey.AllTokensHSet, k, botToken).Err()
 		if err != nil {
 			log.Println(err)
 		}
 
 		for _, v := range sess.State.Guilds {
-			err := tokenProvider.client.SAdd(ctx, guildTokensKey(v.ID), k).Err()
-			if err != redis.Nil && err != nil {
-				log.Println(strings.ReplaceAll(err.Error(), token, "<redacted>"))
+			err := tokenProvider.client.SAdd(ctx, rediskey.GuildTokensKey(v.ID), k).Err()
+			if !errors.Is(err, redis.Nil) && err != nil {
+				log.Println(strings.ReplaceAll(err.Error(), botToken, "<redacted>"))
 			} else {
 				log.Println("Added token for guild " + v.ID)
 			}
@@ -458,9 +377,6 @@ func (tokenProvider *TokenProvider) Run(port string) {
 
 func (tokenProvider *TokenProvider) rateLimitEventCallback(sess *discordgo.Session, rl *discordgo.RateLimit) {
 	log.Println(rl.Message)
-	RateLimitExceedLock.Lock()
-	RateLimitExceedCounter++
-	RateLimitExceedLock.Unlock()
 }
 
 func (tokenProvider *TokenProvider) waitForAck(pubsub *redis.PubSub, waitTime time.Duration, result chan<- bool) {
@@ -471,12 +387,12 @@ func (tokenProvider *TokenProvider) waitForAck(pubsub *redis.PubSub, waitTime ti
 	for {
 		select {
 		case <-t.C:
-			result <- false
 			t.Stop()
+			result <- false
 			return
 		case val := <-channel:
-			result <- val.Payload == "true"
 			t.Stop()
+			result <- val.Payload == "true"
 			return
 		}
 	}
@@ -504,7 +420,7 @@ func (tokenProvider *TokenProvider) newGuild(hashedToken string) func(s *discord
 		tokenProvider.sessionLock.RLock()
 		for test := range tokenProvider.activeSessions {
 			if hashedToken == test {
-				err := tokenProvider.client.SAdd(ctx, guildTokensKey(m.Guild.ID), hashedToken)
+				err := tokenProvider.client.SAdd(ctx, rediskey.GuildTokensKey(m.Guild.ID), hashedToken)
 				if err != nil {
 					log.Println(err)
 				} else {
