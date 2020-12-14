@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"github.com/automuteus/utils/pkg/premium"
 	"github.com/automuteus/utils/pkg/rediskey"
 	"github.com/automuteus/utils/pkg/task"
@@ -24,11 +25,11 @@ import (
 
 var PremiumBotConstraints = map[premium.Tier]int{
 	0: 0,
-	1: 0,   //Free and Bronze have no premium bots
-	2: 1,   //Silver has 1 bot
-	3: 3,   //Gold has 3 bots
-	4: 10,  //Platinum (TBD)
-	5: 100, //Selfhost; 100 bots(!)
+	1: 0,   // Free and Bronze have no premium bots
+	2: 1,   // Silver has 1 bot
+	3: 3,   // Gold has 3 bots
+	4: 10,  // Platinum (TBD)
+	5: 100, // Selfhost; 100 bots(!)
 }
 
 const DefaultCaptureBotTimeout = time.Second
@@ -39,7 +40,7 @@ type TokenProvider struct {
 	client         *redis.Client
 	primarySession *discordgo.Session
 
-	//maps hashed tokens to active discord sessions
+	// maps hashed tokens to active discord sessions
 	activeSessions      map[string]*discordgo.Session
 	maxRequests5Seconds int64
 	sessionLock         sync.RWMutex
@@ -121,7 +122,7 @@ func (tokenProvider *TokenProvider) openAndStartSessionWithToken(botToken string
 			log.Println(err)
 			return false
 		}
-		//associates the guilds with this token to be used for requests
+		// associates the guilds with this token to be used for requests
 		sess.AddHandler(tokenProvider.newGuild(k))
 		log.Println("Opened session on startup for " + k)
 		tokenProvider.activeSessions[k] = sess
@@ -146,14 +147,14 @@ func (tokenProvider *TokenProvider) getAnySession(guildID string, tokens []strin
 		if i == limit {
 			return nil, ""
 		}
-		//if this token isn't potentially rate-limited
+		// if this token isn't potentially rate-limited
 		if tokenProvider.IncrAndTestGuildTokenComboLock(guildID, hToken) {
-			if sess, ok := tokenProvider.activeSessions[hToken]; ok {
+			sess, ok := tokenProvider.activeSessions[hToken]
+			if ok {
 				return sess, hToken
-			} else {
-				//remove this key from our records and keep going
-				tokenProvider.client.SRem(context.Background(), rediskey.GuildTokensKey(guildID), hToken)
 			}
+			// remove this key from our records and keep going
+			tokenProvider.client.SRem(context.Background(), rediskey.GuildTokensKey(guildID), hToken)
 		} else {
 			log.Println("Secondary token is potentially rate-limited. Skipping")
 		}
@@ -252,12 +253,12 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		}
 		mdscLock := sync.Mutex{}
 
-		//start a handful of workers to handle the tasks
+		// start a handful of workers to handle the tasks
 		for i := 0; i < maxWorkers; i++ {
 			go func() {
 				for request := range tasksChannel {
-					userIdStr := strconv.FormatUint(request.UserID, 10)
-					success := tokenProvider.attemptOnSecondaryTokens(guildID, userIdStr, tokens, limit, request)
+					userIDStr := strconv.FormatUint(request.UserID, 10)
+					success := tokenProvider.attemptOnSecondaryTokens(guildID, userIDStr, tokens, limit, request)
 					if success {
 						mdscLock.Lock()
 						mdsc.Worker++
@@ -270,7 +271,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 							mdscLock.Unlock()
 						} else {
 							log.Printf("Applying mute=%v, deaf=%v using primary bot\n", request.Mute, request.Deaf)
-							err = task.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userIdStr, request.Mute, request.Deaf)
+							err = task.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userIDStr, request.Mute, request.Deaf)
 							if err != nil {
 								log.Println(err)
 							} else {
@@ -303,7 +304,6 @@ func (tokenProvider *TokenProvider) Run(port string) {
 				log.Println(err)
 			}
 		}
-		return
 	}).Methods("POST")
 
 	r.HandleFunc("/addtoken", func(w http.ResponseWriter, r *http.Request) {
@@ -358,7 +358,7 @@ func (tokenProvider *TokenProvider) Run(port string) {
 
 		for _, v := range sess.State.Guilds {
 			err := tokenProvider.client.SAdd(ctx, rediskey.GuildTokensKey(v.ID), k).Err()
-			if err != redis.Nil && err != nil {
+			if !errors.Is(err, redis.Nil) && err != nil {
 				log.Println(strings.ReplaceAll(err.Error(), botToken, "<redacted>"))
 			} else {
 				log.Println("Added token for guild " + v.ID)

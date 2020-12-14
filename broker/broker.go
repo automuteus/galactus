@@ -3,6 +3,7 @@ package broker
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"github.com/automuteus/utils/pkg/game"
 	"github.com/automuteus/utils/pkg/rediskey"
 	"github.com/automuteus/utils/pkg/task"
@@ -186,7 +187,7 @@ func (broker *Broker) Start(port string) {
 				log.Println(err)
 			}
 			err = broker.client.Expire(context.Background(), rediskey.RoomCodesForConnCode(cCode), time.Minute*15).Err()
-			if err != redis.Nil && err != nil {
+			if !errors.Is(err, redis.Nil) && err != nil {
 				log.Println(err)
 			}
 		}
@@ -236,7 +237,7 @@ func (broker *Broker) Start(port string) {
 		activeConns := len(broker.connections)
 		broker.connectionsLock.RUnlock()
 
-		//default to listing active games in the last 15 mins
+		// default to listing active games in the last 15 mins
 		activeGames := rediskey.GetActiveGames(context.Background(), broker.client, 900)
 		version, commit := rediskey.GetVersionAndCommit(context.Background(), broker.client)
 		totalGuilds := rediskey.GetGuildCounter(context.Background(), broker.client)
@@ -279,7 +280,6 @@ func (broker *Broker) Start(port string) {
 			w.WriteHeader(http.StatusOK)
 			w.Write(jbytes)
 		}
-		return
 	})
 	log.Printf("Message broker is running on port %s...\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, router))
@@ -299,10 +299,9 @@ func errorResponse(w http.ResponseWriter) {
 	} else {
 		w.Write(jbytes)
 	}
-	return
 }
 
-//anytime a bot "acks", then push a notification
+// anytime a bot "acks", then push a notification
 func (broker *Broker) AckWorker(ctx context.Context, connCode string, killChan <-chan bool) {
 	pubsub := task.AckSubscribe(ctx, broker.client, connCode)
 	channel := pubsub.Channel()
