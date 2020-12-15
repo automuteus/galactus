@@ -233,6 +233,11 @@ func (broker *Broker) Start(port string) {
 	router := mux.NewRouter()
 	router.Handle("/socket.io/", server)
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// TODO For any higher-sensitivity info in the future, this should properly identify the origin specifically
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length")
+
 		broker.connectionsLock.RLock()
 		activeConns := len(broker.connections)
 		broker.connectionsLock.RUnlock()
