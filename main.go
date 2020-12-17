@@ -1,7 +1,6 @@
 package main
 
 import (
-	"github.com/automuteus/galactus/broker"
 	"github.com/automuteus/galactus/galactus"
 	"log"
 	"os"
@@ -30,11 +29,6 @@ func main() {
 		log.Println("No GALACTUS_PORT provided. Defaulting to " + DefaultGalactusPort)
 		galactusPort = DefaultGalactusPort
 	}
-	brokerPort := os.Getenv("BROKER_PORT")
-	if brokerPort == "" {
-		log.Println("No BROKER_PORT provided. Defaulting to " + DefaultBrokerPort)
-		brokerPort = DefaultBrokerPort
-	}
 
 	redisUser := os.Getenv("REDIS_USER")
 	redisPass := os.Getenv("REDIS_PASS")
@@ -59,12 +53,9 @@ func main() {
 
 	tp := galactus.NewTokenProvider(botToken, redisAddr, redisUser, redisPass, maxReq)
 	tp.PopulateAndStartSessions()
-	msgBroker := broker.NewBroker(redisAddr, redisUser, redisPass)
 
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
-
-	go msgBroker.Start(brokerPort)
 
 	go tp.Run(galactusPort)
 	<-sc

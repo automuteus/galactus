@@ -26,7 +26,6 @@ storage of temporary tokens, and, crucially, communication between the Capture c
 
 ### Optional:
 * `GALACTUS_PORT`: The port on which Galactus will run and receive requests from AutoMuteUs. Defaults to 5858.
-* `BROKER_PORT`: The port on which the broker will listen for socket connections from capture clients. Defaults to 8123.
 * `REDIS_USER`: Username to authenticate with Redis, if applicable.
 * `REDIS_PASS`: Password to authenticate with Redis, if applicable.
 
