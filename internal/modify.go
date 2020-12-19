@@ -1,4 +1,4 @@
-package galactus
+package internal
 
 import (
 	"context"
@@ -9,7 +9,7 @@ import (
 	"time"
 )
 
-func (tokenProvider *TokenProvider) attemptOnSecondaryTokens(guildID, userID string, tokens []string, limit int, request task.UserModify) bool {
+func (tokenProvider *GalactusAPI) attemptOnSecondaryTokens(guildID, userID string, tokens []string, limit int, request task.UserModify) bool {
 	if tokens != nil && limit > 0 {
 		sess, hToken := tokenProvider.getAnySession(guildID, tokens, limit)
 		if sess != nil {
@@ -30,7 +30,7 @@ func (tokenProvider *TokenProvider) attemptOnSecondaryTokens(guildID, userID str
 	return false
 }
 
-func (tokenProvider *TokenProvider) attemptOnCaptureBot(guildID, connectCode string, gid uint64, timeout time.Duration, request task.UserModify) bool {
+func (tokenProvider *GalactusAPI) attemptOnCaptureBot(guildID, connectCode string, gid uint64, timeout time.Duration, request task.UserModify) bool {
 	// this is cheeky, but use the connect code as part of the lock; don't issue too many requests on the capture client w/ this code
 	if tokenProvider.IncrAndTestGuildTokenComboLock(guildID, connectCode) {
 		// if the secondary token didn't work, then next we try the client-side capture request

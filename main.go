@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/automuteus/galactus/galactus"
+	"github.com/automuteus/galactus/internal"
 	"log"
 	"os"
 	"os/signal"
@@ -10,7 +10,6 @@ import (
 )
 
 const DefaultGalactusPort = "5858"
-const DefaultBrokerPort = "8123"
 const DefaultMaxRequests5Sec int64 = 7
 
 func main() {
@@ -51,7 +50,7 @@ func main() {
 		maxReq = num
 	}
 
-	tp := galactus.NewTokenProvider(botToken, redisAddr, redisUser, redisPass, maxReq)
+	tp := internal.NewGalactusAPI(botToken, redisAddr, redisUser, redisPass, maxReq)
 	tp.PopulateAndStartSessions()
 
 	sc := make(chan os.Signal, 1)

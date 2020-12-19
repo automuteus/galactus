@@ -1,11 +1,10 @@
-package galactus
+package internal
 
 import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"github.com/automuteus/utils/pkg/premium"
 	"github.com/automuteus/utils/pkg/rediskey"
 	"github.com/automuteus/utils/pkg/task"
@@ -13,12 +12,12 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
+	"github.com/jonas747/dshardmanager"
 	"io/ioutil"
 	"log"
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -36,9 +35,9 @@ const DefaultCaptureBotTimeout = time.Second
 
 var ctx = context.Background()
 
-type TokenProvider struct {
-	client         *redis.Client
-	primarySession *discordgo.Session
+type GalactusAPI struct {
+	client       *redis.Client
+	shardManager *dshardmanager.Manager
 
 	// maps hashed tokens to active discord sessions
 	activeSessions      map[string]*discordgo.Session
@@ -46,7 +45,7 @@ type TokenProvider struct {
 	sessionLock         sync.RWMutex
 }
 
-func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string, maxReq int64) *TokenProvider {
+func NewGalactusAPI(botToken, redisAddr, redisUser, redisPass string, maxReq int64) *GalactusAPI {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
 		Username: redisUser,
@@ -54,44 +53,43 @@ func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string, maxReq i
 		DB:       0, // use default DB
 	})
 
-	token.WaitForToken(rdb, botToken)
-	token.LockForToken(rdb, botToken)
+	manager := MakeShardManager(botToken, discordgo.MakeIntent(discordgo.IntentsGuildVoiceStates|discordgo.IntentsGuildMessages|discordgo.IntentsGuilds|discordgo.IntentsGuildMessageReactions))
+	AddHandlers(manager, rdb)
+	//
+	//token.WaitForToken(rdb, botToken)
+	//token.LockForToken(rdb, botToken)
+	//
+	//dg, err := discordgo.New("Bot " + botToken)
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
+	//dg.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsGuilds)
+	//shards := os.Getenv("NUM_SHARDS")
+	//if shards != "" {
+	//	n, err := strconv.ParseInt(shards, 10, 64)
+	//	if err != nil {
+	//		log.Println(err)
+	//	}
+	//	dg.ShardCount = int(n)
+	//	dg.ShardID = 0
+	//}
+	//dg.AddHandler(rateLimitEventCallback)
+	//
+	//err = dg.Open()
+	//if err != nil {
+	//	log.Fatal(err)
+	//}
 
-	dg, err := discordgo.New("Bot " + botToken)
-	if err != nil {
-		log.Fatal(err)
-	}
-	dg.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsGuilds)
-	shards := os.Getenv("NUM_SHARDS")
-	if shards != "" {
-		n, err := strconv.ParseInt(shards, 10, 64)
-		if err != nil {
-			log.Println(err)
-		}
-		dg.ShardCount = int(n)
-		dg.ShardID = 0
-	}
-	dg.AddHandler(rateLimitEventCallback)
-
-	err = dg.Open()
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	return &TokenProvider{
+	return &GalactusAPI{
 		client:              rdb,
-		primarySession:      dg,
+		shardManager:        manager,
 		activeSessions:      make(map[string]*discordgo.Session),
 		maxRequests5Seconds: maxReq,
 		sessionLock:         sync.RWMutex{},
 	}
 }
 
-func rateLimitEventCallback(sess *discordgo.Session, rl *discordgo.RateLimit) {
-	log.Println(rl.Message)
-}
-
-func (tokenProvider *TokenProvider) PopulateAndStartSessions() {
+func (tokenProvider *GalactusAPI) PopulateAndStartSessions() {
 	keys, err := tokenProvider.client.HGetAll(ctx, rediskey.AllTokensHSet).Result()
 	if err != nil {
 		log.Println(err)
@@ -103,7 +101,7 @@ func (tokenProvider *TokenProvider) PopulateAndStartSessions() {
 	}
 }
 
-func (tokenProvider *TokenProvider) openAndStartSessionWithToken(botToken string) bool {
+func (tokenProvider *GalactusAPI) openAndStartSessionWithToken(botToken string) bool {
 	k := hashToken(botToken)
 	tokenProvider.sessionLock.Lock()
 	defer tokenProvider.sessionLock.Unlock()
@@ -131,7 +129,7 @@ func (tokenProvider *TokenProvider) openAndStartSessionWithToken(botToken string
 	return false
 }
 
-func (tokenProvider *TokenProvider) getAllTokensForGuild(guildID string) []string {
+func (tokenProvider *GalactusAPI) getAllTokensForGuild(guildID string) []string {
 	hTokens, err := tokenProvider.client.SMembers(context.Background(), rediskey.GuildTokensKey(guildID)).Result()
 	if err != nil {
 		return nil
@@ -139,7 +137,7 @@ func (tokenProvider *TokenProvider) getAllTokensForGuild(guildID string) []strin
 	return hTokens
 }
 
-func (tokenProvider *TokenProvider) getAnySession(guildID string, tokens []string, limit int) (*discordgo.Session, string) {
+func (tokenProvider *GalactusAPI) getAnySession(guildID string, tokens []string, limit int) (*discordgo.Session, string) {
 	tokenProvider.sessionLock.RLock()
 	defer tokenProvider.sessionLock.RUnlock()
 
@@ -163,7 +161,7 @@ func (tokenProvider *TokenProvider) getAnySession(guildID string, tokens []strin
 	return nil, ""
 }
 
-func (tokenProvider *TokenProvider) IncrAndTestGuildTokenComboLock(guildID, hashToken string) bool {
+func (tokenProvider *GalactusAPI) IncrAndTestGuildTokenComboLock(guildID, hashToken string) bool {
 	i, err := tokenProvider.client.Incr(context.Background(), rediskey.GuildTokenLock(guildID, hashToken)).Result()
 	if err != nil {
 		log.Println(err)
@@ -182,7 +180,7 @@ func (tokenProvider *TokenProvider) IncrAndTestGuildTokenComboLock(guildID, hash
 	return true
 }
 
-func (tokenProvider *TokenProvider) BlacklistTokenForDuration(guildID, hashToken string, duration time.Duration) error {
+func (tokenProvider *GalactusAPI) BlacklistTokenForDuration(guildID, hashToken string, duration time.Duration) error {
 	return tokenProvider.client.Set(context.Background(), rediskey.GuildTokenLock(guildID, hashToken), tokenProvider.maxRequests5Seconds, duration).Err()
 }
 
@@ -190,7 +188,7 @@ const DefaultMaxWorkers = 8
 
 var UnresponsiveCaptureBlacklistDuration = time.Minute * time.Duration(5)
 
-func (tokenProvider *TokenProvider) Run(port string) {
+func (tokenProvider *GalactusAPI) Run(port string) {
 	r := mux.NewRouter()
 
 	taskTimeoutms := DefaultCaptureBotTimeout
@@ -271,7 +269,8 @@ func (tokenProvider *TokenProvider) Run(port string) {
 							mdscLock.Unlock()
 						} else {
 							log.Printf("Applying mute=%v, deaf=%v using primary bot\n", request.Mute, request.Deaf)
-							err = task.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userIDStr, request.Mute, request.Deaf)
+							// TODO round-robin the session ID (don't always go on 0; no reason)
+							err = task.ApplyMuteDeaf(tokenProvider.shardManager.Session(0), guildID, userIDStr, request.Mute, request.Deaf)
 							if err != nil {
 								log.Println(err)
 							} else {
@@ -306,80 +305,80 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		}
 	}).Methods("POST")
 
-	r.HandleFunc("/addtoken", func(w http.ResponseWriter, r *http.Request) {
-		body, err := ioutil.ReadAll(r.Body)
-		if err != nil {
-			log.Println(err)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(err.Error()))
-			return
-		}
-		defer r.Body.Close()
-
-		botToken := string(body)
-		log.Println(botToken)
-
-		k := hashToken(botToken)
-		log.Println(k)
-		tokenProvider.sessionLock.RLock()
-		if _, ok := tokenProvider.activeSessions[k]; ok {
-			log.Println("Token already exists on the server")
-			w.WriteHeader(http.StatusAlreadyReported)
-			w.Write([]byte("Token already exists on the server"))
-			tokenProvider.sessionLock.RUnlock()
-			return
-		}
-		tokenProvider.sessionLock.RUnlock()
-
-		token.WaitForToken(tokenProvider.client, botToken)
-		token.LockForToken(tokenProvider.client, botToken)
-		sess, err := discordgo.New("Bot " + botToken)
-		if err != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(err.Error()))
-			return
-		}
-		sess.AddHandler(tokenProvider.newGuild(k))
-		err = sess.Open()
-		if err != nil {
-			w.WriteHeader(http.StatusUnauthorized)
-			w.Write([]byte(err.Error()))
-			return
-		}
-
-		tokenProvider.sessionLock.Lock()
-		tokenProvider.activeSessions[k] = sess
-		tokenProvider.sessionLock.Unlock()
-
-		err = tokenProvider.client.HSet(ctx, rediskey.AllTokensHSet, k, botToken).Err()
-		if err != nil {
-			log.Println(err)
-		}
-
-		for _, v := range sess.State.Guilds {
-			err := tokenProvider.client.SAdd(ctx, rediskey.GuildTokensKey(v.ID), k).Err()
-			if !errors.Is(err, redis.Nil) && err != nil {
-				log.Println(strings.ReplaceAll(err.Error(), botToken, "<redacted>"))
-			} else {
-				log.Println("Added token for guild " + v.ID)
-			}
-		}
-	}).Methods("POST")
+	//r.HandleFunc("/addtoken", func(w http.ResponseWriter, r *http.Request) {
+	//	body, err := ioutil.ReadAll(r.Body)
+	//	if err != nil {
+	//		log.Println(err)
+	//		w.WriteHeader(http.StatusBadRequest)
+	//		w.Write([]byte(err.Error()))
+	//		return
+	//	}
+	//	defer r.Body.Close()
+	//
+	//	botToken := string(body)
+	//	log.Println(botToken)
+	//
+	//	k := hashToken(botToken)
+	//	log.Println(k)
+	//	tokenProvider.sessionLock.RLock()
+	//	if _, ok := tokenProvider.activeSessions[k]; ok {
+	//		log.Println("Token already exists on the server")
+	//		w.WriteHeader(http.StatusAlreadyReported)
+	//		w.Write([]byte("Token already exists on the server"))
+	//		tokenProvider.sessionLock.RUnlock()
+	//		return
+	//	}
+	//	tokenProvider.sessionLock.RUnlock()
+	//
+	//	token.WaitForToken(tokenProvider.client, botToken)
+	//	token.LockForToken(tokenProvider.client, botToken)
+	//	sess, err := discordgo.New("Bot " + botToken)
+	//	if err != nil {
+	//		w.WriteHeader(http.StatusBadRequest)
+	//		w.Write([]byte(err.Error()))
+	//		return
+	//	}
+	//	sess.AddHandler(tokenProvider.newGuild(k))
+	//	err = sess.Open()
+	//	if err != nil {
+	//		w.WriteHeader(http.StatusUnauthorized)
+	//		w.Write([]byte(err.Error()))
+	//		return
+	//	}
+	//
+	//	tokenProvider.sessionLock.Lock()
+	//	tokenProvider.activeSessions[k] = sess
+	//	tokenProvider.sessionLock.Unlock()
+	//
+	//	err = tokenProvider.client.HSet(ctx, rediskey.AllTokensHSet, k, botToken).Err()
+	//	if err != nil {
+	//		log.Println(err)
+	//	}
+	//
+	//	for _, v := range sess.State.Guilds {
+	//		err := tokenProvider.client.SAdd(ctx, rediskey.GuildTokensKey(v.ID), k).Err()
+	//		if !errors.Is(err, redis.Nil) && err != nil {
+	//			log.Println(strings.ReplaceAll(err.Error(), botToken, "<redacted>"))
+	//		} else {
+	//			log.Println("Added token for guild " + v.ID)
+	//		}
+	//	}
+	//}).Methods("POST")
 
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ok"))
 	}).Methods("GET")
 
-	log.Println("Galactus token service is running on port " + port + "...")
+	log.Println("Galactus service is running on port " + port + "...")
 	http.ListenAndServe(":"+port, r)
 }
 
-func (tokenProvider *TokenProvider) rateLimitEventCallback(sess *discordgo.Session, rl *discordgo.RateLimit) {
+func (tokenProvider *GalactusAPI) rateLimitEventCallback(sess *discordgo.Session, rl *discordgo.RateLimit) {
 	log.Println(rl.Message)
 }
 
-func (tokenProvider *TokenProvider) waitForAck(pubsub *redis.PubSub, waitTime time.Duration, result chan<- bool) {
+func (tokenProvider *GalactusAPI) waitForAck(pubsub *redis.PubSub, waitTime time.Duration, result chan<- bool) {
 	t := time.NewTimer(waitTime)
 	defer pubsub.Close()
 	channel := pubsub.Channel()
@@ -404,18 +403,21 @@ func hashToken(token string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-func (tokenProvider *TokenProvider) Close() {
+func (tokenProvider *GalactusAPI) Close() {
+	err := tokenProvider.shardManager.StopAll()
+	if err != nil {
+		log.Println(err)
+	}
+
 	tokenProvider.sessionLock.Lock()
 	for _, v := range tokenProvider.activeSessions {
 		v.Close()
 	}
-
 	tokenProvider.activeSessions = map[string]*discordgo.Session{}
 	tokenProvider.sessionLock.Unlock()
-	tokenProvider.primarySession.Close()
 }
 
-func (tokenProvider *TokenProvider) newGuild(hashedToken string) func(s *discordgo.Session, m *discordgo.GuildCreate) {
+func (tokenProvider *GalactusAPI) newGuild(hashedToken string) func(s *discordgo.Session, m *discordgo.GuildCreate) {
 	return func(s *discordgo.Session, m *discordgo.GuildCreate) {
 		tokenProvider.sessionLock.RLock()
 		for test := range tokenProvider.activeSessions {
