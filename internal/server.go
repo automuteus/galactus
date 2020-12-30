@@ -13,6 +13,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
 	"github.com/jonas747/dshardmanager"
+	"go.uber.org/zap"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -33,7 +34,7 @@ var PremiumBotConstraints = map[premium.Tier]int{
 
 const DefaultCaptureBotTimeout = time.Second
 
-var ctx = context.Background()
+var DefaultIntents = discordgo.MakeIntent(discordgo.IntentsGuildVoiceStates | discordgo.IntentsGuildMessages | discordgo.IntentsGuilds | discordgo.IntentsGuildMessageReactions)
 
 type GalactusAPI struct {
 	client       *redis.Client
@@ -45,7 +46,7 @@ type GalactusAPI struct {
 	sessionLock         sync.RWMutex
 }
 
-func NewGalactusAPI(botToken, redisAddr, redisUser, redisPass string, maxReq int64) *GalactusAPI {
+func NewGalactusAPI(logger *zap.Logger, botToken, redisAddr, redisUser, redisPass string, maxReq int64) *GalactusAPI {
 	rdb := redis.NewClient(&redis.Options{
 		Addr:     redisAddr,
 		Username: redisUser,
@@ -53,32 +54,8 @@ func NewGalactusAPI(botToken, redisAddr, redisUser, redisPass string, maxReq int
 		DB:       0, // use default DB
 	})
 
-	manager := MakeShardManager(botToken, discordgo.MakeIntent(discordgo.IntentsGuildVoiceStates|discordgo.IntentsGuildMessages|discordgo.IntentsGuilds|discordgo.IntentsGuildMessageReactions))
-	AddHandlers(manager, rdb)
-	//
-	//token.WaitForToken(rdb, botToken)
-	//token.LockForToken(rdb, botToken)
-	//
-	//dg, err := discordgo.New("Bot " + botToken)
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
-	//dg.Identify.Intents = discordgo.MakeIntent(discordgo.IntentsGuilds)
-	//shards := os.Getenv("NUM_SHARDS")
-	//if shards != "" {
-	//	n, err := strconv.ParseInt(shards, 10, 64)
-	//	if err != nil {
-	//		log.Println(err)
-	//	}
-	//	dg.ShardCount = int(n)
-	//	dg.ShardID = 0
-	//}
-	//dg.AddHandler(rateLimitEventCallback)
-	//
-	//err = dg.Open()
-	//if err != nil {
-	//	log.Fatal(err)
-	//}
+	manager := MakeShardManager(logger, botToken, DefaultIntents)
+	AddHandlers(logger, manager, rdb)
 
 	return &GalactusAPI{
 		client:              rdb,
@@ -90,7 +67,7 @@ func NewGalactusAPI(botToken, redisAddr, redisUser, redisPass string, maxReq int
 }
 
 func (tokenProvider *GalactusAPI) PopulateAndStartSessions() {
-	keys, err := tokenProvider.client.HGetAll(ctx, rediskey.AllTokensHSet).Result()
+	keys, err := tokenProvider.client.HGetAll(context.Background(), rediskey.AllTokensHSet).Result()
 	if err != nil {
 		log.Println(err)
 		return
@@ -374,7 +351,7 @@ func (tokenProvider *GalactusAPI) Run(port string) {
 	http.ListenAndServe(":"+port, r)
 }
 
-func (tokenProvider *GalactusAPI) rateLimitEventCallback(sess *discordgo.Session, rl *discordgo.RateLimit) {
+func rateLimitEventCallback(sess *discordgo.Session, rl *discordgo.RateLimit) {
 	log.Println(rl.Message)
 }
 
@@ -422,7 +399,7 @@ func (tokenProvider *GalactusAPI) newGuild(hashedToken string) func(s *discordgo
 		tokenProvider.sessionLock.RLock()
 		for test := range tokenProvider.activeSessions {
 			if hashedToken == test {
-				err := tokenProvider.client.SAdd(ctx, rediskey.GuildTokensKey(m.Guild.ID), hashedToken)
+				err := tokenProvider.client.SAdd(context.Background(), rediskey.GuildTokensKey(m.Guild.ID), hashedToken)
 				if err != nil {
 					log.Println(err)
 				} else {

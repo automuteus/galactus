@@ -24,6 +24,7 @@ func LockSnowflake(ctx context.Context, client *redis.Client, snowflake string) 
 	return lock
 }
 
+// TODO use the one in utils
 func UserSoftbanKey(userID string) string {
 	return "automuteus:ratelimit:softban:user:" + userID
 }
@@ -34,5 +35,5 @@ func IsUserBanned(client *redis.Client, userID string) bool {
 		log.Println(err)
 		return false
 	}
-	return v == 1 // =1 means the user is present, and thus rate-limited
+	return v == 1 // = 1 means the user is present, and thus rate-limited
 }
