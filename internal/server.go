@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"github.com/alicebob/miniredis/v2"
 	"github.com/automuteus/utils/pkg/premium"
 	"github.com/automuteus/utils/pkg/rediskey"
 	"github.com/automuteus/utils/pkg/task"
@@ -22,6 +23,8 @@ import (
 	"sync"
 	"time"
 )
+
+const MOCK_REDIS = true
 
 var PremiumBotConstraints = map[premium.Tier]int{
 	0: 0,
@@ -47,12 +50,24 @@ type GalactusAPI struct {
 }
 
 func NewGalactusAPI(logger *zap.Logger, botToken, redisAddr, redisUser, redisPass string, maxReq int64) *GalactusAPI {
-	rdb := redis.NewClient(&redis.Options{
-		Addr:     redisAddr,
-		Username: redisUser,
-		Password: redisPass,
-		DB:       0, // use default DB
-	})
+	var rdb *redis.Client
+	if MOCK_REDIS {
+		mr, err := miniredis.Run()
+		if err != nil {
+			panic(err)
+		}
+
+		rdb = redis.NewClient(&redis.Options{
+			Addr: mr.Addr(),
+		})
+	} else {
+		rdb = redis.NewClient(&redis.Options{
+			Addr:     redisAddr,
+			Username: redisUser,
+			Password: redisPass,
+			DB:       0, // use default DB
+		})
+	}
 
 	manager := MakeShardManager(logger, botToken, DefaultIntents)
 	AddHandlers(logger, manager, rdb)
@@ -349,10 +364,6 @@ func (tokenProvider *GalactusAPI) Run(port string) {
 
 	log.Println("Galactus service is running on port " + port + "...")
 	http.ListenAndServe(":"+port, r)
-}
-
-func rateLimitEventCallback(sess *discordgo.Session, rl *discordgo.RateLimit) {
-	log.Println(rl.Message)
 }
 
 func (tokenProvider *GalactusAPI) waitForAck(pubsub *redis.PubSub, waitTime time.Duration, result chan<- bool) {

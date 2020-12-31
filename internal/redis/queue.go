@@ -18,6 +18,14 @@ const (
 	MessageReactionAdd
 )
 
+var DiscordMessageTypeStrings = []string{
+	"GuildCreate",
+	"GuildDelete",
+	"VoiceStateUpdate",
+	"MessageCreate",
+	"MessageReactionAdd",
+}
+
 type DiscordMessage struct {
 	MessageType DiscordMessageType
 	Data        []byte

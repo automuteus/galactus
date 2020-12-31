@@ -11,8 +11,11 @@ import (
 
 func MessageCreateHandler(logger *zap.Logger, client *redis.Client) func(s *discordgo.Session, m *discordgo.MessageCreate) {
 	return func(s *discordgo.Session, m *discordgo.MessageCreate) {
+		if m == nil {
+			return
+		}
 		// ignore messages created by the bot
-		if m.Author.ID == s.State.User.ID {
+		if m.Author == nil || m.Author.ID == s.State.User.ID {
 			return
 		}
 
@@ -47,6 +50,8 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client) func(s *disc
 		if err != nil {
 			logger.Error("error pushing discord message to Redis for MessageCreate message",
 				zap.Error(err))
+		} else {
+			LogDiscordMessagePush(logger, redis_utils.MessageCreate, m.GuildID, m.ChannelID, m.Author.ID, m.ID)
 		}
 	}
 }

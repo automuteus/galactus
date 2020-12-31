@@ -10,6 +10,9 @@ import (
 
 func GuildDeleteHandler(logger *zap.Logger, client *redis.Client) func(s *discordgo.Session, m *discordgo.GuildDelete) {
 	return func(s *discordgo.Session, m *discordgo.GuildDelete) {
+		if m == nil {
+			return
+		}
 		byt, err := json.Marshal(m)
 		if err != nil {
 			logger.Error("error marshalling json for GuildDelete message",
@@ -20,9 +23,7 @@ func GuildDeleteHandler(logger *zap.Logger, client *redis.Client) func(s *discor
 			logger.Error("error pushing to Redis for GuildDelete message",
 				zap.Error(err))
 		} else {
-			logger.Info("received GuildDelete message",
-				zap.String("ID", m.ID),
-			)
+			LogDiscordMessagePush(logger, redis_utils.GuildDelete, m.ID, "", m.OwnerID, m.ID)
 		}
 	}
 }
