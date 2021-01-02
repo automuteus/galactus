@@ -28,13 +28,13 @@ var DiscordMessageTypeStrings = []string{
 
 type DiscordMessage struct {
 	MessageType DiscordMessageType
-	Data        []byte
+	Data        string
 }
 
 func PushDiscordMessage(client *redis.Client, messageType DiscordMessageType, data []byte) error {
 	s := DiscordMessage{
 		MessageType: messageType,
-		Data:        data,
+		Data:        string(data),
 	}
 	byt, err := json.Marshal(s)
 	if err != nil {
@@ -44,16 +44,15 @@ func PushDiscordMessage(client *redis.Client, messageType DiscordMessageType, da
 	return client.LPush(context.Background(), GatewayMessageKey, byt).Err()
 }
 
-func PopDiscordMessage(client *redis.Client) (*DiscordMessage, error) {
+func PopRawDiscordMessage(client *redis.Client) (string, error) {
 	res, err := client.RPop(context.Background(), GatewayMessageKey).Result()
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
-	var d DiscordMessage
-	err = json.Unmarshal([]byte(res), &d)
-	if err != nil {
-		return nil, err
-	}
-	return &d, nil
+	return res, nil
+}
+
+func DiscordMessagesSize(client *redis.Client) (int64, error) {
+	return client.LLen(context.Background(), GatewayMessageKey).Result()
 }

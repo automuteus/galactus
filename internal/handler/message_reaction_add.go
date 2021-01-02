@@ -13,6 +13,12 @@ func MessageReactionAddHandler(logger *zap.Logger, client *redis.Client) func(s 
 		if m == nil {
 			return
 		}
+
+		// ignore reactions from the bot
+		if m.UserID == s.State.User.ID {
+			return
+		}
+
 		byt, err := json.Marshal(m)
 		if err != nil {
 			logger.Error("error marshalling json for MessageReactionAdd message",

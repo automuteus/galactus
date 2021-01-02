@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"github.com/alicebob/miniredis/v2"
+	redis_utils "github.com/automuteus/galactus/internal/redis"
 	"github.com/automuteus/utils/pkg/premium"
 	"github.com/automuteus/utils/pkg/rediskey"
 	"github.com/automuteus/utils/pkg/task"
@@ -24,7 +26,7 @@ import (
 	"time"
 )
 
-const MOCK_REDIS = true
+const MockRedis = true
 
 var PremiumBotConstraints = map[premium.Tier]int{
 	0: 0,
@@ -51,7 +53,7 @@ type GalactusAPI struct {
 
 func NewGalactusAPI(logger *zap.Logger, botToken, redisAddr, redisUser, redisPass string, maxReq int64) *GalactusAPI {
 	var rdb *redis.Client
-	if MOCK_REDIS {
+	if MockRedis {
 		mr, err := miniredis.Run()
 		if err != nil {
 			panic(err)
@@ -176,11 +178,15 @@ func (tokenProvider *GalactusAPI) BlacklistTokenForDuration(guildID, hashToken s
 	return tokenProvider.client.Set(context.Background(), rediskey.GuildTokenLock(guildID, hashToken), tokenProvider.maxRequests5Seconds, duration).Err()
 }
 
+type JobsNumber struct {
+	Jobs int64 `json:"jobs"`
+}
+
 const DefaultMaxWorkers = 8
 
 var UnresponsiveCaptureBlacklistDuration = time.Minute * time.Duration(5)
 
-func (tokenProvider *GalactusAPI) Run(port string) {
+func (tokenProvider *GalactusAPI) Run(logger *zap.Logger, port string) {
 	r := mux.NewRouter()
 
 	taskTimeoutms := DefaultCaptureBotTimeout
@@ -356,6 +362,69 @@ func (tokenProvider *GalactusAPI) Run(port string) {
 	//		}
 	//	}
 	//}).Methods("POST")
+	// TODO maybe eventually provide some auth parameter, or version number? Something to prove that a worker can pop requests?
+	r.HandleFunc("/request/job", func(w http.ResponseWriter, r *http.Request) {
+		msg, err := redis_utils.PopRawDiscordMessage(tokenProvider.client)
+
+		// no jobs available
+		switch {
+		case errors.Is(err, redis.Nil):
+			w.WriteHeader(http.StatusAccepted)
+			w.Write([]byte("{\"status\": \"No jobs available\"}"))
+			return
+		case err != nil:
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("{\"error\": \"" + err.Error() + "\"}"))
+			logger.Error("redis error when popping job",
+				zap.String("endpoint", "/request/job"),
+				zap.Error(err))
+			return
+		case msg == "":
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("{\"error\": \"Nil job returned, despite no Redis errors\"}"))
+			logger.Error("nil job returned, despite no Redis errors",
+				zap.String("endpoint", "/request/job"))
+			return
+		}
+
+		w.WriteHeader(http.StatusOK)
+
+		_, err = w.Write([]byte(msg))
+		if err != nil {
+			logger.Error("failed to write job as HTTP response",
+				zap.String("endpoint", "/request/job"),
+				zap.Error(err),
+			)
+		}
+	}).Methods("POST")
+
+	r.HandleFunc("/jobs", func(w http.ResponseWriter, r *http.Request) {
+		var jobs JobsNumber
+
+		num, err := redis_utils.DiscordMessagesSize(tokenProvider.client)
+		if err == nil || errors.Is(err, redis.Nil) {
+			if errors.Is(err, redis.Nil) {
+				jobs.Jobs = 0
+			} else {
+				jobs.Jobs = num
+			}
+
+			byt, err := json.Marshal(jobs)
+			if err != nil {
+				logger.Error("error marshalling JobsNumber",
+					zap.Error(err),
+				)
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("{\"error\": \"" + err.Error() + "\"}"))
+			} else {
+				w.WriteHeader(http.StatusOK)
+				w.Write(byt)
+			}
+		} else {
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte("{\"error\": \"" + err.Error() + "\"}"))
+		}
+	}).Methods("GET")
 
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
