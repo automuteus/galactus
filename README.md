@@ -1,6 +1,10 @@
 # galactus
 The All-Knowing Bot Token and Socket Provider Aggregator.
 
+Latest Version: <a href="https://github.com/automuteus/galactus/releases" target="_blank">
+<img alt="GitHub release" src="https://img.shields.io/github/v/tag/automuteus/galactus">
+</a></br>
+
 https://youtu.be/y8OnoxKotPQ
 
 ## Description
