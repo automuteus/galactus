@@ -24,13 +24,8 @@ func LockSnowflake(ctx context.Context, client *redis.Client, snowflake string) 
 	return lock
 }
 
-// TODO use the one in utils
-func UserSoftbanKey(userID string) string {
-	return "automuteus:ratelimit:softban:user:" + userID
-}
-
 func IsUserBanned(client *redis.Client, userID string) bool {
-	v, err := client.Exists(context.Background(), UserSoftbanKey(userID)).Result()
+	v, err := client.Exists(context.Background(), rediskey.UserSoftban(userID)).Result()
 	if err != nil {
 		log.Println(err)
 		return false

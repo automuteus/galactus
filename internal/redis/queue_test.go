@@ -1,6 +1,7 @@
 package redis
 
 import (
+	"encoding/json"
 	"errors"
 	"github.com/alicebob/miniredis/v2"
 	"github.com/go-redis/redis/v8"
@@ -35,9 +36,9 @@ const inputMsg = "{\"id\":\"0\"," +
 
 func TestPopEmpty(t *testing.T) {
 	client := newTestRedis()
-	msg, err := PopDiscordMessage(client)
+	msg, err := PopRawDiscordMessage(client)
 
-	if msg != nil {
+	if msg != "" {
 		t.Fatal("non-nil message received from empty pop")
 	}
 
@@ -58,18 +59,24 @@ func TestPushAndPopSingle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	msg, err := PopDiscordMessage(client)
+	msg, err := PopRawDiscordMessage(client)
 	if err != nil {
 		t.Fatal(err)
-	} else if msg == nil {
+	} else if msg == "" {
 		t.Fatal("nil message returned when expected the previous msg we pushed")
 	}
 
-	if msg.MessageType != MessageCreate {
+	var d DiscordMessage
+	err = json.Unmarshal([]byte(msg), &d)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if d.MessageType != MessageCreate {
 		t.Fatal("returned msg type is not msgcreate")
 	}
 
-	if !strings.EqualFold(inputMsg, string(msg.Data)) {
+	if !strings.EqualFold(inputMsg, d.Data) {
 		t.Fatal("input and output messages are not equivalent")
 	}
 }
@@ -87,40 +94,51 @@ func TestPushAndPopMultiple(t *testing.T) {
 		log.Fatal(err)
 	}
 
-	msg, err := PopDiscordMessage(client)
+	msg, err := PopRawDiscordMessage(client)
 	if err != nil {
 		log.Fatal(err)
-	} else if msg == nil {
+	} else if msg == "" {
 		log.Fatal("nil message returned when expected the previous msg we pushed")
 	}
 
-	if msg.MessageType != MessageCreate {
+	var d DiscordMessage
+	err = json.Unmarshal([]byte(msg), &d)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if d.MessageType != MessageCreate {
 		t.Fatal("returned msg type is not msgcreate")
 	}
 
-	if !strings.EqualFold(inputMsg, string(msg.Data)) {
+	if !strings.EqualFold(inputMsg, d.Data) {
 		t.Fatal("input and output messages are not equivalent")
 	}
 
-	msg, err = PopDiscordMessage(client)
+	msg, err = PopRawDiscordMessage(client)
 	if err != nil {
 		log.Fatal(err)
-	} else if msg == nil {
+	} else if msg == "" {
 		log.Fatal("nil message returned when expected the previous msg we pushed for input2")
 	}
 
-	if msg.MessageType != MessageCreate {
+	err = json.Unmarshal([]byte(msg), &d)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if d.MessageType != MessageCreate {
 		t.Fatal("returned msg type is not msgcreate for input2")
 	}
 
-	if !strings.EqualFold(input2, string(msg.Data)) {
+	if !strings.EqualFold(input2, d.Data) {
 		t.Fatal("input2 and output messages are not equivalent")
 	}
 
 	// replace back; now the string comparison should fail
 	input2 = strings.Replace(input2, "\"id\":\"1\"", "\"id\":\"0\"", 1)
 
-	if strings.EqualFold(input2, string(msg.Data)) {
+	if strings.EqualFold(input2, d.Data) {
 		t.Fatal("input and output messages are equivalent, when we mutated the input on purpose")
 	}
 }

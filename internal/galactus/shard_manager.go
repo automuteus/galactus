@@ -1,4 +1,4 @@
-package internal
+package galactus
 
 import (
 	"github.com/automuteus/galactus/internal/handler"

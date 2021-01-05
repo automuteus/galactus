@@ -1,17 +1,20 @@
 package main
 
 import (
-	"github.com/automuteus/galactus/internal"
+	"github.com/automuteus/galactus/internal/galactus"
 	"go.uber.org/zap"
 	"log"
 	"os"
 	"os/signal"
 	"strconv"
 	"syscall"
+	"time"
 )
 
 const DefaultGalactusPort = "5858"
 const DefaultMaxRequests5Sec int64 = 7
+const DefaultMaxWorkers = 8
+const DefaultCaptureBotTimeout = time.Second
 
 func main() {
 	logger, err := zap.NewProduction()
@@ -51,21 +54,45 @@ func main() {
 		}
 	}
 
+	taskTimeout := DefaultCaptureBotTimeout
+
+	taskTimeoutmsStr := os.Getenv("ACK_TIMEOUT_MS")
+	num, err := strconv.ParseInt(taskTimeoutmsStr, 10, 64)
+	if err == nil {
+		taskTimeout = time.Millisecond * time.Duration(num)
+	} else {
+		logger.Error("could not parse ACK_TIMEOUT_MS",
+			zap.Error(err),
+			zap.Int64("default", taskTimeout.Milliseconds()))
+	}
+
+	maxWorkers := DefaultMaxWorkers
+	maxWorkersStr := os.Getenv("MAX_WORKERS")
+	num, err = strconv.ParseInt(maxWorkersStr, 10, 64)
+	if err == nil {
+		maxWorkers = int(num)
+	} else {
+		logger.Error("could not parse MAX_WORKERS",
+			zap.Error(err),
+			zap.Int("default", maxWorkers))
+	}
+
 	logger.Info("loaded env",
 		zap.String("DISCORD_BOT_TOKEN", botToken),
 		zap.String("REDIS_ADDR", redisAddr),
 		zap.String("REDIS_USER", redisUser),
 		zap.String("REDIS_PASS", redisPass),
 		zap.Int("MAX_REQ_5_SEC", int(maxReq)),
+		zap.Int("MAX_WORKERS", maxWorkers),
+		zap.Int64("ACK_TIMEOUT_MS", taskTimeout.Milliseconds()),
 	)
 
-	tp := internal.NewGalactusAPI(logger, botToken, redisAddr, redisUser, redisPass, maxReq)
-	tp.PopulateAndStartSessions()
+	tp := galactus.NewGalactusAPI(logger, botToken, redisAddr, redisUser, redisPass, maxReq)
 
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
 
-	go tp.Run(logger, galactusPort)
+	go tp.Run(galactusPort, maxWorkers, taskTimeout)
 	<-sc
 	tp.Close()
 }
