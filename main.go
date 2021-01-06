@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const MockRedis = true
+
 const DefaultGalactusPort = "5858"
 const DefaultMaxRequests5Sec int64 = 7
 const DefaultMaxWorkers = 8
@@ -87,7 +89,7 @@ func main() {
 		zap.Int64("ACK_TIMEOUT_MS", taskTimeout.Milliseconds()),
 	)
 
-	tp := galactus.NewGalactusAPI(logger, botToken, redisAddr, redisUser, redisPass, maxReq)
+	tp := galactus.NewGalactusAPI(logger, MockRedis, botToken, redisAddr, redisUser, redisPass, maxReq)
 
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)

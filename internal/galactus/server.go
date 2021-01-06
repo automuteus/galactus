@@ -8,6 +8,7 @@ import (
 	"errors"
 	"github.com/alicebob/miniredis/v2"
 	redisutils "github.com/automuteus/galactus/internal/redis"
+	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/utils/pkg/premium"
 	"github.com/automuteus/utils/pkg/rediskey"
 	"github.com/automuteus/utils/pkg/token"
@@ -22,8 +23,6 @@ import (
 	"sync"
 	"time"
 )
-
-const MockRedis = true
 
 var PremiumBotConstraints = map[premium.Tier]int{
 	0: 0,
@@ -48,9 +47,9 @@ type GalactusAPI struct {
 	logger *zap.Logger
 }
 
-func NewGalactusAPI(logger *zap.Logger, botToken, redisAddr, redisUser, redisPass string, maxReq int64) *GalactusAPI {
+func NewGalactusAPI(logger *zap.Logger, mockRedis bool, botToken, redisAddr, redisUser, redisPass string, maxReq int64) *GalactusAPI {
 	var rdb *redis.Client
-	if MockRedis {
+	if mockRedis {
 		mr, err := miniredis.Run()
 		if err != nil {
 			panic(err)
@@ -166,7 +165,9 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, taskTimeout time.D
 
 	r := mux.NewRouter()
 
-	r.HandleFunc("/modify/{guildID}/{connectCode}", galactus.modifyUserHandler(maxWorkers, taskTimeout)).Methods("POST")
+	r.HandleFunc(endpoint.ModifyUserbyGuildConnectCode, galactus.modifyUserHandler(maxWorkers, taskTimeout)).Methods("POST")
+	r.HandleFunc(endpoint.SendMessageFull, SendChannelMessageHandler(galactus.logger, galactus.shardManager)).Methods("POST")
+	r.HandleFunc(endpoint.SendMessageEmbedFull, galactus.SendChannelMessageEmbedHandler()).Methods("POST")
 
 	// TODO maybe eventually provide some auth parameter, or version number? Something to prove that a worker can pop requests?
 	r.HandleFunc("/request/job", func(w http.ResponseWriter, r *http.Request) {
