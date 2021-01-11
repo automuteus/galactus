@@ -3,38 +3,16 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"github.com/automuteus/galactus/pkg/discord_message"
 	"github.com/go-redis/redis/v8"
 )
 
 const GatewayMessageKey = "automuteus:gateway:message"
 
-type DiscordMessageType int
-
-const (
-	GuildCreate DiscordMessageType = iota
-	GuildDelete
-	VoiceStateUpdate
-	MessageCreate
-	MessageReactionAdd
-)
-
-var DiscordMessageTypeStrings = []string{
-	"GuildCreate",
-	"GuildDelete",
-	"VoiceStateUpdate",
-	"MessageCreate",
-	"MessageReactionAdd",
-}
-
-type DiscordMessage struct {
-	MessageType DiscordMessageType
-	Data        string
-}
-
-func PushDiscordMessage(client *redis.Client, messageType DiscordMessageType, data []byte) error {
-	s := DiscordMessage{
+func PushDiscordMessage(client *redis.Client, messageType discord_message.DiscordMessageType, data []byte) error {
+	s := discord_message.DiscordMessage{
 		MessageType: messageType,
-		Data:        string(data),
+		Data:        data,
 	}
 	byt, err := json.Marshal(s)
 	if err != nil {

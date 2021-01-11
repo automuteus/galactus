@@ -166,11 +166,13 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, taskTimeout time.D
 	r := mux.NewRouter()
 
 	r.HandleFunc(endpoint.ModifyUserbyGuildConnectCode, galactus.modifyUserHandler(maxWorkers, taskTimeout)).Methods("POST")
-	r.HandleFunc(endpoint.SendMessageFull, SendChannelMessageHandler(galactus.logger, galactus.shardManager)).Methods("POST")
+
+	r.HandleFunc(endpoint.SendMessageFull, galactus.SendChannelMessageHandler()).Methods("POST")
 	r.HandleFunc(endpoint.SendMessageEmbedFull, galactus.SendChannelMessageEmbedHandler()).Methods("POST")
+	r.HandleFunc(endpoint.DeleteMessageFull, galactus.DeleteChannelMessageHandler()).Methods("POST")
 
 	// TODO maybe eventually provide some auth parameter, or version number? Something to prove that a worker can pop requests?
-	r.HandleFunc("/request/job", func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc(endpoint.RequestJob, func(w http.ResponseWriter, r *http.Request) {
 		msg, err := redisutils.PopRawDiscordMessage(galactus.client)
 
 		// no jobs available
@@ -183,14 +185,14 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, taskTimeout time.D
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte("{\"error\": \"" + err.Error() + "\"}"))
 			galactus.logger.Error("redis error when popping job",
-				zap.String("endpoint", "/request/job"),
+				zap.String("endpoint", endpoint.RequestJob),
 				zap.Error(err))
 			return
 		case msg == "":
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte("{\"error\": \"Nil job returned, despite no Redis errors\"}"))
 			galactus.logger.Error("nil job returned, despite no Redis errors",
-				zap.String("endpoint", "/request/job"))
+				zap.String("endpoint", endpoint.RequestJob))
 			return
 		}
 
@@ -199,13 +201,13 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, taskTimeout time.D
 		_, err = w.Write([]byte(msg))
 		if err != nil {
 			galactus.logger.Error("failed to write job as HTTP response",
-				zap.String("endpoint", "/request/job"),
+				zap.String("endpoint", endpoint.RequestJob),
 				zap.Error(err),
 			)
 		}
 	}).Methods("POST")
 
-	r.HandleFunc("/jobs", func(w http.ResponseWriter, r *http.Request) {
+	r.HandleFunc(endpoint.JobCount, func(w http.ResponseWriter, r *http.Request) {
 		var jobs JobsNumber
 
 		num, err := redisutils.DiscordMessagesSize(galactus.client)

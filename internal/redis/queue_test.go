@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/alicebob/miniredis/v2"
+	"github.com/automuteus/galactus/pkg/discord_message"
 	"github.com/go-redis/redis/v8"
 	"log"
 	"strings"
@@ -54,7 +55,7 @@ func TestPopEmpty(t *testing.T) {
 func TestPushAndPopSingle(t *testing.T) {
 	client := newTestRedis()
 
-	err := PushDiscordMessage(client, MessageCreate, []byte(inputMsg))
+	err := PushDiscordMessage(client, discord_message.MessageCreate, []byte(inputMsg))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,17 +67,17 @@ func TestPushAndPopSingle(t *testing.T) {
 		t.Fatal("nil message returned when expected the previous msg we pushed")
 	}
 
-	var d DiscordMessage
+	var d discord_message.DiscordMessage
 	err = json.Unmarshal([]byte(msg), &d)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if d.MessageType != MessageCreate {
+	if d.MessageType != discord_message.MessageCreate {
 		t.Fatal("returned msg type is not msgcreate")
 	}
 
-	if !strings.EqualFold(inputMsg, d.Data) {
+	if !strings.EqualFold(inputMsg, string(d.Data)) {
 		t.Fatal("input and output messages are not equivalent")
 	}
 }
@@ -84,12 +85,12 @@ func TestPushAndPopSingle(t *testing.T) {
 func TestPushAndPopMultiple(t *testing.T) {
 	client := newTestRedis()
 
-	err := PushDiscordMessage(client, MessageCreate, []byte(inputMsg))
+	err := PushDiscordMessage(client, discord_message.MessageCreate, []byte(inputMsg))
 	if err != nil {
 		log.Fatal(err)
 	}
 	input2 := strings.Replace(inputMsg, "\"id\":\"0\"", "\"id\":\"1\"", 1)
-	err = PushDiscordMessage(client, MessageCreate, []byte(input2))
+	err = PushDiscordMessage(client, discord_message.MessageCreate, []byte(input2))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -101,17 +102,17 @@ func TestPushAndPopMultiple(t *testing.T) {
 		log.Fatal("nil message returned when expected the previous msg we pushed")
 	}
 
-	var d DiscordMessage
+	var d discord_message.DiscordMessage
 	err = json.Unmarshal([]byte(msg), &d)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if d.MessageType != MessageCreate {
+	if d.MessageType != discord_message.MessageCreate {
 		t.Fatal("returned msg type is not msgcreate")
 	}
 
-	if !strings.EqualFold(inputMsg, d.Data) {
+	if !strings.EqualFold(inputMsg, string(d.Data)) {
 		t.Fatal("input and output messages are not equivalent")
 	}
 
@@ -127,18 +128,18 @@ func TestPushAndPopMultiple(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if d.MessageType != MessageCreate {
+	if d.MessageType != discord_message.MessageCreate {
 		t.Fatal("returned msg type is not msgcreate for input2")
 	}
 
-	if !strings.EqualFold(input2, d.Data) {
+	if !strings.EqualFold(input2, string(d.Data)) {
 		t.Fatal("input2 and output messages are not equivalent")
 	}
 
 	// replace back; now the string comparison should fail
 	input2 = strings.Replace(input2, "\"id\":\"1\"", "\"id\":\"0\"", 1)
 
-	if strings.EqualFold(input2, d.Data) {
+	if strings.EqualFold(input2, string(d.Data)) {
 		t.Fatal("input and output messages are equivalent, when we mutated the input on purpose")
 	}
 }

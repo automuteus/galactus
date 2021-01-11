@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	redis_utils "github.com/automuteus/galactus/internal/redis"
+	"github.com/automuteus/galactus/pkg/discord_message"
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
@@ -21,6 +22,8 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client) func(s *disc
 
 		// TODO should find an efficient way to hook into a guild's prefix here. Would allow for filtering messages
 		// quickly without pushing them into the queue
+
+		// TODO softban the users at this level; bot logic shouldn't have to worry about it
 
 		if redis_utils.IsUserBanned(client, m.Author.ID) {
 			logger.Info("ignoring message from softbanned user",
@@ -46,12 +49,12 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client) func(s *disc
 			logger.Error("error marshalling json for MessageCreate message",
 				zap.Error(err))
 		}
-		err = redis_utils.PushDiscordMessage(client, redis_utils.MessageCreate, byt)
+		err = redis_utils.PushDiscordMessage(client, discord_message.MessageCreate, byt)
 		if err != nil {
 			logger.Error("error pushing discord message to Redis for MessageCreate message",
 				zap.Error(err))
 		} else {
-			LogDiscordMessagePush(logger, redis_utils.MessageCreate, m.GuildID, m.ChannelID, m.Author.ID, m.ID)
+			LogDiscordMessagePush(logger, discord_message.MessageCreate, m.GuildID, m.ChannelID, m.Author.ID, m.ID)
 		}
 	}
 }

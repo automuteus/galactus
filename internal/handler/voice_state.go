@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	redis_utils "github.com/automuteus/galactus/internal/redis"
+	"github.com/automuteus/galactus/pkg/discord_message"
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
@@ -18,12 +19,12 @@ func VoiceStateUpdateHandler(logger *zap.Logger, client *redis.Client) func(s *d
 			logger.Error("error marshalling json for VoiceStateUpdate message",
 				zap.Error(err))
 		}
-		err = redis_utils.PushDiscordMessage(client, redis_utils.VoiceStateUpdate, byt)
+		err = redis_utils.PushDiscordMessage(client, discord_message.VoiceStateUpdate, byt)
 		if err != nil {
 			logger.Error("error pushing to Redis for VoiceStateUpdate message",
 				zap.Error(err))
 		} else {
-			LogDiscordMessagePush(logger, redis_utils.VoiceStateUpdate, m.GuildID, m.ChannelID, m.UserID, m.SessionID)
+			LogDiscordMessagePush(logger, discord_message.VoiceStateUpdate, m.GuildID, m.ChannelID, m.UserID, m.SessionID)
 		}
 	}
 }

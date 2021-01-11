@@ -38,8 +38,8 @@ func (galactus *GalactusAPI) SendChannelMessageEmbedHandler() func(w http.Respon
 		}
 		defer r.Body.Close()
 
-		var embed *discordgo.MessageEmbed
-		err = json.Unmarshal(body, embed)
+		var embed discordgo.MessageEmbed
+		err = json.Unmarshal(body, &embed)
 		if err != nil {
 			errMsg := "error unmarshalling discordMessageEmbed from JSON"
 			galactus.logger.Error(errMsg,
@@ -64,7 +64,7 @@ func (galactus *GalactusAPI) SendChannelMessageEmbedHandler() func(w http.Respon
 			return
 		}
 
-		msg, err := sess.ChannelMessageSendEmbed(channelID, embed)
+		msg, err := sess.ChannelMessageSendEmbed(channelID, &embed)
 		if err != nil {
 			errMsg := "error posting messageEmbed to channel"
 			galactus.logger.Error(errMsg,
