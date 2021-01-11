@@ -169,7 +169,21 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, taskTimeout time.D
 
 	r.HandleFunc(endpoint.SendMessageFull, galactus.SendChannelMessageHandler()).Methods("POST")
 	r.HandleFunc(endpoint.SendMessageEmbedFull, galactus.SendChannelMessageEmbedHandler()).Methods("POST")
+
+	r.HandleFunc(endpoint.EditMessageEmbedFull, galactus.EditMessageEmbedHandler()).Methods("POST")
+
 	r.HandleFunc(endpoint.DeleteMessageFull, galactus.DeleteChannelMessageHandler()).Methods("POST")
+
+	r.HandleFunc(endpoint.GetGuildFull, galactus.GetGuildHandler()).Methods("POST")
+	r.HandleFunc(endpoint.GetGuildChannelsFull, galactus.GetGuildChannelsHandler()).Methods("POST")
+	r.HandleFunc(endpoint.GetGuildMemberFull, galactus.GetGuildMemberHandler()).Methods("POST")
+	r.HandleFunc(endpoint.GetGuildRolesFull, galactus.GetGuildRolesHandler()).Methods("POST")
+
+	r.HandleFunc(endpoint.AddReactionFull, galactus.AddReactionHandler()).Methods("POST")
+	r.HandleFunc(endpoint.RemoveReactionFull, galactus.RemoveReactionHandler()).Methods("POST")
+	r.HandleFunc(endpoint.RemoveAllReactionsFull, galactus.RemoveAllReactionsHandler()).Methods("POST")
+
+	r.HandleFunc(endpoint.UserChannelCreateFull, galactus.CreateUserChannelHandler()).Methods("POST")
 
 	// TODO maybe eventually provide some auth parameter, or version number? Something to prove that a worker can pop requests?
 	r.HandleFunc(endpoint.RequestJob, func(w http.ResponseWriter, r *http.Request) {

@@ -2,27 +2,19 @@ package galactus
 
 import (
 	"encoding/json"
+	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
 	"github.com/bwmarrin/discordgo"
-	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 	"io/ioutil"
+	"log"
 	"net/http"
 )
 
 func (galactus *GalactusAPI) SendChannelMessageEmbedHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		channelID := vars["channelID"]
-		valid, err := validate.ValidSnowflake(channelID)
-		if !valid {
-			errMsg := "channelID provided to sendMessageEmbedHandler is invalid"
-			galactus.logger.Error(errMsg,
-				zap.String("channelID", channelID),
-				zap.Error(err),
-			)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(errMsg + ": " + err.Error()))
+		channelID := validate.ChannelIDAndRespond(galactus.logger, w, r, endpoint.SendMessageEmbedFull)
+		if channelID == "" {
 			return
 		}
 
@@ -84,6 +76,10 @@ func (galactus *GalactusAPI) SendChannelMessageEmbedHandler() func(w http.Respon
 			zap.String("messageID", msg.ID),
 		)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(msg.ID))
+		jbytes, err := json.Marshal(msg)
+		if err != nil {
+			log.Println(err)
+		}
+		w.Write(jbytes)
 	}
 }

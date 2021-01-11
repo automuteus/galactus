@@ -7,19 +7,16 @@ import (
 	"net/http"
 )
 
-func (galactus *GalactusAPI) DeleteChannelMessageHandler() func(w http.ResponseWriter, r *http.Request) {
+func (galactus *GalactusAPI) RemoveAllReactionsHandler() func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		channelID, messageID := validate.ChannelAndMessageIDsAndRespond(galactus.logger, w, r, endpoint.DeleteMessageFull)
+		channelID, messageID := validate.ChannelAndMessageIDsAndRespond(galactus.logger, w, r, endpoint.RemoveAllReactionsFull)
 		if channelID == "" || messageID == "" {
 			return
 		}
 
-		// TODO perform some validation on the message body?
-		// ex message length, empty contents, etc
-
 		sess, err := getRandomSession(galactus.shardManager)
 		if err != nil {
-			errMsg := "error obtaining random session for " + endpoint.DeleteMessageFull
+			errMsg := "error obtaining random session for removeAllReactions"
 			galactus.logger.Error(errMsg,
 				zap.Error(err),
 			)
@@ -27,9 +24,9 @@ func (galactus *GalactusAPI) DeleteChannelMessageHandler() func(w http.ResponseW
 			w.Write([]byte(errMsg + ": " + err.Error()))
 			return
 		}
-		err = sess.ChannelMessageDelete(channelID, messageID)
+		err = sess.MessageReactionsRemoveAll(channelID, messageID)
 		if err != nil {
-			errMsg := "error deleting message in channel"
+			errMsg := "failed to remove all reactions"
 			galactus.logger.Error(errMsg,
 				zap.Error(err),
 				zap.String("channelID", channelID),
@@ -40,12 +37,6 @@ func (galactus *GalactusAPI) DeleteChannelMessageHandler() func(w http.ResponseW
 			return
 		}
 
-		// TODO metrics logging here
-		galactus.logger.Info("deleted message in channel",
-			zap.String("channelID", channelID),
-			zap.String("messageID", messageID),
-		)
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(messageID))
 	}
 }
