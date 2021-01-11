@@ -28,10 +28,9 @@ storage of temporary tokens, and, crucially, communication between the Capture c
 * `GALACTUS_PORT`: The port on which Galactus will run and receive requests from AutoMuteUs. Defaults to 5858.
 * `REDIS_USER`: Username to authenticate with Redis, if applicable.
 * `REDIS_PASS`: Password to authenticate with Redis, if applicable.
+* `WORKER_BOT_TOKENS`: Additional bot tokens that Galactus should leverage to issue mutes/deafens
 
 ## **Do not provide unless you know what you're doing**:
-* `NUM_SHARDS`: Should match whatever automuteus is using
-* `SHARD_ID`: Probably just use 0
 * `MAX_REQ_5_SEC`: How many Discord API mute/deafens should be issued per token per 5 second window. Defaults to 7 (ratelimits
 returned by Discord are anywhere from [5-10]/5sec, so 7 is a decent heuristic)
 * `ACK_TIMEOUT_MS`: How many milliseconds after a Mute task is received before it times out, if no capture bot completes the task

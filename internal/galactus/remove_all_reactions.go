@@ -1,6 +1,7 @@
 package galactus
 
 import (
+	"github.com/automuteus/galactus/internal/galactus/shard_manager"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
 	"go.uber.org/zap"
@@ -14,7 +15,7 @@ func (galactus *GalactusAPI) RemoveAllReactionsHandler() func(w http.ResponseWri
 			return
 		}
 
-		sess, err := getRandomSession(galactus.shardManager)
+		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
 		if err != nil {
 			errMsg := "error obtaining random session for removeAllReactions"
 			galactus.logger.Error(errMsg,

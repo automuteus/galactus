@@ -1,6 +1,7 @@
 package galactus
 
 import (
+	"github.com/automuteus/galactus/internal/galactus/shard_manager"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
 	"github.com/gorilla/mux"
@@ -32,7 +33,7 @@ func (galactus *GalactusAPI) RemoveReactionHandler() func(w http.ResponseWriter,
 			return
 		}
 
-		sess, err := getRandomSession(galactus.shardManager)
+		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
 		if err != nil {
 			errMsg := "error obtaining random session for removeReaction"
 			galactus.logger.Error(errMsg,

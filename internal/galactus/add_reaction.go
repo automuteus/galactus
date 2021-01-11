@@ -1,6 +1,7 @@
 package galactus
 
 import (
+	"github.com/automuteus/galactus/internal/galactus/shard_manager"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
 	"github.com/gorilla/mux"
@@ -15,12 +16,12 @@ func (galactus *GalactusAPI) AddReactionHandler() func(w http.ResponseWriter, r 
 			return
 		}
 
-		// manually fetch the emojiID, because it can be a non-numeric Unicode emoji directly
+		// manually fetch the emojiID, because it can be a non-numeric/snowflake Unicode emoji
 
 		vars := mux.Vars(r)
 		emojiID := vars["emojiID"]
 
-		sess, err := getRandomSession(galactus.shardManager)
+		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
 		if err != nil {
 			errMsg := "error obtaining random session for addReaction"
 			galactus.logger.Error(errMsg,

@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/alicebob/miniredis/v2"
+	"github.com/automuteus/galactus/internal/galactus/shard_manager"
 	redisutils "github.com/automuteus/galactus/internal/redis"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/utils/pkg/premium"
@@ -67,8 +68,8 @@ func NewGalactusAPI(logger *zap.Logger, mockRedis bool, botToken, redisAddr, red
 		})
 	}
 
-	manager := MakeShardManager(logger, botToken, DefaultIntents)
-	AddHandlers(logger, manager, rdb)
+	manager := shard_manager.MakeShardManager(logger, botToken, DefaultIntents)
+	shard_manager.AddHandlers(logger, manager, rdb)
 
 	return &GalactusAPI{
 		client:              rdb,
@@ -178,6 +179,8 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, taskTimeout time.D
 	r.HandleFunc(endpoint.GetGuildChannelsFull, galactus.GetGuildChannelsHandler()).Methods("POST")
 	r.HandleFunc(endpoint.GetGuildMemberFull, galactus.GetGuildMemberHandler()).Methods("POST")
 	r.HandleFunc(endpoint.GetGuildRolesFull, galactus.GetGuildRolesHandler()).Methods("POST")
+
+	r.HandleFunc(endpoint.GetGuildAMUSettingsFull, galactus.GetGuildAMUSettings()).Methods("POST")
 
 	r.HandleFunc(endpoint.AddReactionFull, galactus.AddReactionHandler()).Methods("POST")
 	r.HandleFunc(endpoint.RemoveReactionFull, galactus.RemoveReactionHandler()).Methods("POST")

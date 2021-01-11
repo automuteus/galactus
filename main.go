@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-const MockRedis = true
+const MockRedis = false
 
 const DefaultGalactusPort = "5858"
 const DefaultMaxRequests5Sec int64 = 7

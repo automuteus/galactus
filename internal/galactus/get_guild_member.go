@@ -2,6 +2,7 @@ package galactus
 
 import (
 	"encoding/json"
+	"github.com/automuteus/galactus/internal/galactus/shard_manager"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
 	"go.uber.org/zap"
@@ -15,7 +16,7 @@ func (galactus *GalactusAPI) GetGuildMemberHandler() func(w http.ResponseWriter,
 			return
 		}
 
-		sess, err := getRandomSession(galactus.shardManager)
+		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
 		if err != nil {
 			errMsg := "error obtaining random session for getGuildMember"
 			galactus.logger.Error(errMsg,

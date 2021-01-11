@@ -40,3 +40,6 @@ const UserChannelCreateFull = UserChannelCreatePartial + "{userID}"
 
 const RequestJob = "/request/job"
 const JobCount = "/totalJobs"
+
+const GetGuildAMUSettingsPartial = "/getAMUSettings/"
+const GetGuildAMUSettingsFull = GetGuildAMUSettingsPartial + "{guildID}"
