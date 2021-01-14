@@ -121,3 +121,20 @@ func UserIDAndRespond(logger *zap.Logger, w http.ResponseWriter, r *http.Request
 	}
 	return userID
 }
+
+func NameAndRespond(logger *zap.Logger, w http.ResponseWriter, r *http.Request, endpoint string) string {
+	vars := mux.Vars(r)
+	name := vars["name"]
+	valid := name != ""
+	if !valid {
+		errMsg := "name provided to " + endpoint + " is empty and therefore invalid"
+		logger.Error(errMsg,
+			zap.String("name", name),
+			zap.String("endpoint", endpoint),
+		)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(errMsg))
+		return ""
+	}
+	return name
+}

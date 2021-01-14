@@ -188,6 +188,9 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, taskTimeout time.D
 
 	r.HandleFunc(endpoint.UserChannelCreateFull, galactus.CreateUserChannelHandler()).Methods("POST")
 
+	r.HandleFunc(endpoint.GetGuildEmojisFull, galactus.GetGuildEmojisHandler()).Methods("POST")
+	r.HandleFunc(endpoint.CreateGuildEmojiFull, galactus.CreateGuildEmojiHandler()).Methods("POST")
+
 	// TODO maybe eventually provide some auth parameter, or version number? Something to prove that a worker can pop requests?
 	r.HandleFunc(endpoint.RequestJob, func(w http.ResponseWriter, r *http.Request) {
 		msg, err := redisutils.PopRawDiscordMessage(galactus.client)
