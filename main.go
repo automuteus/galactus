@@ -17,6 +17,7 @@ const DefaultGalactusPort = "5858"
 const DefaultMaxRequests5Sec int64 = 7
 const DefaultMaxWorkers = 8
 const DefaultCaptureBotTimeout = time.Second
+const DefaultTaskTimeout = time.Second * 10
 
 func main() {
 	logger, err := zap.NewProduction()
@@ -56,14 +57,26 @@ func main() {
 		}
 	}
 
-	taskTimeout := DefaultCaptureBotTimeout
+	captureAckTimeout := DefaultCaptureBotTimeout
 
-	taskTimeoutmsStr := os.Getenv("ACK_TIMEOUT_MS")
-	num, err := strconv.ParseInt(taskTimeoutmsStr, 10, 64)
+	captureAckTimeoutStr := os.Getenv("ACK_TIMEOUT_MS")
+	num, err := strconv.ParseInt(captureAckTimeoutStr, 10, 64)
+	if err == nil {
+		captureAckTimeout = time.Millisecond * time.Duration(num)
+	} else {
+		logger.Error("could not parse ACK_TIMEOUT_MS",
+			zap.Error(err),
+			zap.Int64("default", captureAckTimeout.Milliseconds()))
+	}
+
+	taskTimeout := DefaultTaskTimeout
+
+	taskTimeoutStr := os.Getenv("TASK_TIMEOUT_MS")
+	num, err = strconv.ParseInt(taskTimeoutStr, 10, 64)
 	if err == nil {
 		taskTimeout = time.Millisecond * time.Duration(num)
 	} else {
-		logger.Error("could not parse ACK_TIMEOUT_MS",
+		logger.Error("could not parse TASK_TIMEOUT_MS",
 			zap.Error(err),
 			zap.Int64("default", taskTimeout.Milliseconds()))
 	}
@@ -86,7 +99,7 @@ func main() {
 		zap.String("REDIS_PASS", redisPass),
 		zap.Int("MAX_REQ_5_SEC", int(maxReq)),
 		zap.Int("MAX_WORKERS", maxWorkers),
-		zap.Int64("ACK_TIMEOUT_MS", taskTimeout.Milliseconds()),
+		zap.Int64("ACK_TIMEOUT_MS", captureAckTimeout.Milliseconds()),
 	)
 
 	tp := galactus.NewGalactusAPI(logger, MockRedis, botToken, redisAddr, redisUser, redisPass, maxReq)
@@ -94,7 +107,7 @@ func main() {
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
 
-	go tp.Run(galactusPort, maxWorkers, taskTimeout)
+	go tp.Run(galactusPort, maxWorkers, captureAckTimeout, taskTimeout)
 	<-sc
 	tp.Close()
 }

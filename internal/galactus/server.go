@@ -160,13 +160,13 @@ type JobsNumber struct {
 	Jobs int64 `json:"jobs"`
 }
 
-func (galactus *GalactusAPI) Run(port string, maxWorkers int, taskTimeout time.Duration) {
+func (galactus *GalactusAPI) Run(port string, maxWorkers int, captureAckTimeout time.Duration, taskTimeout time.Duration) {
 
 	galactus.loadTokensFromEnv()
 
 	r := mux.NewRouter()
 
-	r.HandleFunc(endpoint.ModifyUserbyGuildConnectCode, galactus.modifyUserHandler(maxWorkers, taskTimeout)).Methods("POST")
+	r.HandleFunc(endpoint.ModifyUserbyGuildConnectCode, galactus.modifyUserHandler(maxWorkers, captureAckTimeout)).Methods("POST")
 
 	r.HandleFunc(endpoint.SendMessageFull, galactus.SendChannelMessageHandler()).Methods("POST")
 	r.HandleFunc(endpoint.SendMessageEmbedFull, galactus.SendChannelMessageEmbedHandler()).Methods("POST")
@@ -193,7 +193,7 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, taskTimeout time.D
 
 	// TODO maybe eventually provide some auth parameter, or version number? Something to prove that a worker can pop requests?
 	r.HandleFunc(endpoint.RequestJob, func(w http.ResponseWriter, r *http.Request) {
-		msg, err := redisutils.PopRawDiscordMessage(galactus.client)
+		msg, err := redisutils.PopRawDiscordMessageTimeout(galactus.client, taskTimeout)
 
 		// no jobs available
 		switch {

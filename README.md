@@ -33,5 +33,6 @@ storage of temporary tokens, and, crucially, communication between the Capture c
 ## **Do not provide unless you know what you're doing**:
 * `MAX_REQ_5_SEC`: How many Discord API mute/deafens should be issued per token per 5 second window. Defaults to 7 (ratelimits
 returned by Discord are anywhere from [5-10]/5sec, so 7 is a decent heuristic)
-* `ACK_TIMEOUT_MS`: How many milliseconds after a Mute task is received before it times out, if no capture bot completes the task
+* `ACK_TIMEOUT_MS`: How many milliseconds after a Mute task is received before it times out, if no capture bot completes the task. Defaults to 1000 (1 second)
+* `TASK_TIMEOUT_MS`: How long before a request for available tasks from a Bot times out (client long-polling). Defaults to 10000 (10 seconds)
 * `MAX_WORKERS`: Max concurrent workers for issuing mute/deafens for any inbound request. Defaults to 8
