@@ -2,7 +2,7 @@ package galactus
 
 import (
 	"context"
-	"encoding/json"
+	"github.com/automuteus/galactus/internal/redis"
 	"github.com/automuteus/utils/pkg/rediskey"
 	"github.com/automuteus/utils/pkg/task"
 	"go.uber.org/zap"
@@ -59,17 +59,15 @@ func (galactus *GalactusAPI) attemptOnCaptureBot(guildID, connectCode string, gi
 			Deaf: request.Deaf,
 			Mute: request.Mute,
 		})
-		jBytes, err := json.Marshal(taskObj)
-		if err != nil {
-			log.Println(err)
-			return false
-		}
+
 		acked := make(chan bool)
 		// now we wait for an ack with respect to actually performing the mute
 		pubsub := galactus.client.Subscribe(context.Background(), rediskey.CompleteTask(taskObj.TaskID))
-		err = galactus.client.Publish(context.Background(), rediskey.TasksSubscribe(connectCode), jBytes).Err()
+		defer pubsub.Close()
+
+		err := redis.PushCaptureClientTask(galactus.client, connectCode, taskObj, timeout)
 		if err != nil {
-			log.Println("Error in publishing task to " + rediskey.TasksSubscribe(connectCode))
+			log.Println("Error in pushing task to " + rediskey.TasksList(connectCode))
 			log.Println(err)
 		} else {
 			go galactus.waitForAck(pubsub, timeout, acked)

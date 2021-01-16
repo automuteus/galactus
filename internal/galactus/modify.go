@@ -3,8 +3,9 @@ package galactus
 import (
 	"encoding/json"
 	"github.com/automuteus/galactus/internal/galactus/shard_manager"
+	"github.com/automuteus/galactus/pkg/endpoint"
+	"github.com/automuteus/galactus/pkg/validate"
 	"github.com/automuteus/utils/pkg/task"
-	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 	"io/ioutil"
 	"log"
@@ -16,15 +17,15 @@ import (
 
 func (galactus *GalactusAPI) modifyUserHandler(maxWorkers int, taskTimeout time.Duration) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		guildID := vars["guildID"]
-		connectCode := vars["connectCode"]
-		gid, gerr := strconv.ParseUint(guildID, 10, 64)
-		if gerr != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Invalid guildID received. Query should be of the form POST `/modify/<guildID>/<conncode>`"))
+		guildID := validate.GuildIDAndRespond(galactus.logger, w, r, endpoint.ModifyUserbyGuildConnectCode)
+		connectCode := validate.ConnectCodeAndRespond(galactus.logger, w, r, endpoint.ModifyUserbyGuildConnectCode)
+
+		if guildID == "" || connectCode == "" {
 			return
 		}
+
+		// We can safely ignore the error here, because we already validated the snowflake above
+		gid, _ := strconv.ParseUint(guildID, 10, 64)
 
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {

@@ -164,36 +164,52 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, captureAckTimeout 
 
 	galactus.loadTokensFromEnv()
 
+	// TODO maybe eventually provide some auth parameter, or version number? Something to prove that a worker can pop requests?
 	r := mux.NewRouter()
 
 	r.HandleFunc(endpoint.ModifyUserbyGuildConnectCode, galactus.modifyUserHandler(maxWorkers, captureAckTimeout)).Methods("POST")
-
 	r.HandleFunc(endpoint.SendMessageFull, galactus.SendChannelMessageHandler()).Methods("POST")
 	r.HandleFunc(endpoint.SendMessageEmbedFull, galactus.SendChannelMessageEmbedHandler()).Methods("POST")
-
 	r.HandleFunc(endpoint.EditMessageEmbedFull, galactus.EditMessageEmbedHandler()).Methods("POST")
-
 	r.HandleFunc(endpoint.DeleteMessageFull, galactus.DeleteChannelMessageHandler()).Methods("POST")
-
 	r.HandleFunc(endpoint.GetGuildFull, galactus.GetGuildHandler()).Methods("POST")
 	r.HandleFunc(endpoint.GetGuildChannelsFull, galactus.GetGuildChannelsHandler()).Methods("POST")
 	r.HandleFunc(endpoint.GetGuildMemberFull, galactus.GetGuildMemberHandler()).Methods("POST")
 	r.HandleFunc(endpoint.GetGuildRolesFull, galactus.GetGuildRolesHandler()).Methods("POST")
-
-	r.HandleFunc(endpoint.GetGuildAMUSettingsFull, galactus.GetGuildAMUSettings()).Methods("POST")
-
 	r.HandleFunc(endpoint.AddReactionFull, galactus.AddReactionHandler()).Methods("POST")
 	r.HandleFunc(endpoint.RemoveReactionFull, galactus.RemoveReactionHandler()).Methods("POST")
 	r.HandleFunc(endpoint.RemoveAllReactionsFull, galactus.RemoveAllReactionsHandler()).Methods("POST")
-
 	r.HandleFunc(endpoint.UserChannelCreateFull, galactus.CreateUserChannelHandler()).Methods("POST")
-
 	r.HandleFunc(endpoint.GetGuildEmojisFull, galactus.GetGuildEmojisHandler()).Methods("POST")
 	r.HandleFunc(endpoint.CreateGuildEmojiFull, galactus.CreateGuildEmojiHandler()).Methods("POST")
 
-	// TODO maybe eventually provide some auth parameter, or version number? Something to prove that a worker can pop requests?
-	r.HandleFunc(endpoint.RequestJob, func(w http.ResponseWriter, r *http.Request) {
-		msg, err := redisutils.PopRawDiscordMessageTimeout(galactus.client, taskTimeout)
+	r.HandleFunc(endpoint.GetGuildAMUSettingsFull, galactus.GetGuildAMUSettings()).Methods("POST")
+	r.HandleFunc(endpoint.GetCaptureTaskFull, galactus.GetCaptureTaskHandler(taskTimeout)).Methods("POST")
+	r.HandleFunc(endpoint.SetCaptureTaskStatusFull, galactus.SetCaptureTaskStatusHandler()).Methods("POST")
+
+	r.HandleFunc(endpoint.RequestJob, galactus.requestJobHandler(taskTimeout)).Methods("POST")
+	r.HandleFunc(endpoint.JobCount, galactus.jobCount()).Methods("GET")
+
+	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ok"))
+	}).Methods("GET")
+
+	galactus.logger.Info("galactus is running",
+		zap.String("port", port),
+	)
+
+	err := http.ListenAndServe(":"+port, r)
+	if err != nil {
+		galactus.logger.Error("http listener exited with error",
+			zap.Error(err),
+		)
+	}
+}
+
+func (galactus *GalactusAPI) requestJobHandler(timeout time.Duration) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		msg, err := redisutils.PopRawDiscordMessageTimeout(galactus.client, timeout)
 
 		// no jobs available
 		switch {
@@ -225,9 +241,11 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, captureAckTimeout 
 				zap.Error(err),
 			)
 		}
-	}).Methods("POST")
+	}
+}
 
-	r.HandleFunc(endpoint.JobCount, func(w http.ResponseWriter, r *http.Request) {
+func (galactus *GalactusAPI) jobCount() func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
 		var jobs JobsNumber
 
 		num, err := redisutils.DiscordMessagesSize(galactus.client)
@@ -253,22 +271,6 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, captureAckTimeout 
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte("{\"error\": \"" + err.Error() + "\"}"))
 		}
-	}).Methods("GET")
-
-	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	}).Methods("GET")
-
-	galactus.logger.Info("galactus is running",
-		zap.String("port", port),
-	)
-
-	err := http.ListenAndServe(":"+port, r)
-	if err != nil {
-		galactus.logger.Error("http listener exited with error",
-			zap.Error(err),
-		)
 	}
 }
 

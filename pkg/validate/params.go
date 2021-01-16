@@ -138,3 +138,39 @@ func NameAndRespond(logger *zap.Logger, w http.ResponseWriter, r *http.Request, 
 	}
 	return name
 }
+
+func ConnectCodeAndRespond(logger *zap.Logger, w http.ResponseWriter, r *http.Request, endpoint string) string {
+	vars := mux.Vars(r)
+	connectCode := vars["connectCode"]
+	valid, err := ValidConnectCode(connectCode)
+	if !valid {
+		errMsg := "connectCode provided to " + endpoint + " is invalid"
+		logger.Error(errMsg,
+			zap.Error(err),
+			zap.String("connectCode", connectCode),
+			zap.String("endpoint", endpoint),
+		)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(errMsg))
+		return ""
+	}
+	return connectCode
+}
+
+func TaskIDAndRespond(logger *zap.Logger, w http.ResponseWriter, r *http.Request, endpoint string) string {
+	vars := mux.Vars(r)
+	taskID := vars["taskID"]
+	valid, err := ValidTaskID(taskID)
+	if !valid {
+		errMsg := "taskID provided to " + endpoint + " is invalid"
+		logger.Error(errMsg,
+			zap.Error(err),
+			zap.String("taskID", taskID),
+			zap.String("endpoint", endpoint),
+		)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(errMsg))
+		return ""
+	}
+	return taskID
+}
