@@ -3,16 +3,16 @@ package galactus_client
 import (
 	"bytes"
 	"fmt"
-	"github.com/automuteus/galactus/pkg/capture_message"
 	"github.com/automuteus/galactus/pkg/endpoint"
+	"github.com/automuteus/utils/pkg/capture"
 	"io/ioutil"
 	"log"
 	"net/http"
 )
 
-func (galactus *GalactusClient) AddCaptureEvent(connectCode string, event capture_message.CaptureMessage) error {
-	url := fmt.Sprintf("%s%s/%d", galactus.Address+endpoint.AddCaptureEventPartial, connectCode, event.MessageType)
-	resp, err := galactus.client.Post(url, "application/json", bytes.NewBuffer(event.Data))
+func (galactus *GalactusClient) AddCaptureEvent(connectCode string, event capture.Event) error {
+	url := fmt.Sprintf("%s%s/%d", galactus.Address+endpoint.AddCaptureEventPartial, connectCode, event.EventType)
+	resp, err := galactus.client.Post(url, "application/json", bytes.NewBuffer(event.Payload.([]byte)))
 	if err != nil {
 		return err
 	}

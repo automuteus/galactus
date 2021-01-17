@@ -4,10 +4,10 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"github.com/automuteus/galactus/pkg/capture_message"
 	"github.com/automuteus/galactus/pkg/discord_message"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
+	"github.com/automuteus/utils/pkg/capture"
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
 	"io/ioutil"
@@ -30,7 +30,7 @@ type GalactusClient struct {
 	guildDeleteHandlers        []func(m discordgo.GuildDelete)
 	guildCreateHandlers        []func(m discordgo.GuildCreate)
 
-	genericCaptureHandlers map[string][]func(msg capture_message.CaptureMessage)
+	genericCaptureHandlers map[string][]func(msg capture.Event)
 }
 
 func NewGalactusClient(address string, logger *zap.Logger) (*GalactusClient, error) {
@@ -48,7 +48,7 @@ func NewGalactusClient(address string, logger *zap.Logger) (*GalactusClient, err
 		voiceStateUpdateHandlers:   make([]func(m discordgo.VoiceStateUpdate), 0),
 		guildDeleteHandlers:        make([]func(m discordgo.GuildDelete), 0),
 		guildCreateHandlers:        make([]func(m discordgo.GuildCreate), 0),
-		genericCaptureHandlers:     make(map[string][]func(m capture_message.CaptureMessage)),
+		genericCaptureHandlers:     make(map[string][]func(m capture.Event)),
 	}
 	r, err := http.Get(gc.Address + "/")
 	if err != nil {
@@ -105,7 +105,7 @@ func (galactus *GalactusClient) StartPolling(pollingType PollingType, connectCod
 				case DiscordPolling:
 					url = galactus.Address + endpoint.RequestJob
 				case CapturePolling:
-					url = galactus.Address + endpoint.GetCaptureTaskPartial + connectCode
+					url = galactus.Address + endpoint.GetCaptureEventPartial + connectCode
 				}
 				req, err := http.NewRequest("POST", url, bytes.NewBufferString(""))
 				if err != nil {
@@ -147,7 +147,7 @@ func (galactus *GalactusClient) StartPolling(pollingType PollingType, connectCod
 								galactus.dispatchDiscordMessage(msg)
 							}
 						case CapturePolling:
-							var msg capture_message.CaptureMessage
+							var msg capture.Event
 							err := json.Unmarshal(body, &msg)
 							if err != nil {
 								galactus.logger.Error("error unmarshalling capture message from galactus",
@@ -232,7 +232,7 @@ func (galactus *GalactusClient) dispatchDiscordMessage(msg discord_message.Disco
 	}
 }
 
-func (galactus *GalactusClient) dispatchCaptureMessage(connectCode string, msg capture_message.CaptureMessage) {
+func (galactus *GalactusClient) dispatchCaptureMessage(connectCode string, msg capture.Event) {
 	if handlers, ok := galactus.genericCaptureHandlers[connectCode]; ok {
 		for _, v := range handlers {
 			v(msg)
@@ -292,11 +292,11 @@ func (galactus *GalactusClient) RegisterDiscordHandler(msgType discord_message.D
 
 func (galactus *GalactusClient) RegisterCaptureHandler(connectCode string, f interface{}) bool {
 	if handlers, ok := galactus.genericCaptureHandlers[connectCode]; ok {
-		handlers = append(handlers, f.(func(msg capture_message.CaptureMessage)))
+		handlers = append(handlers, f.(func(msg capture.Event)))
 		galactus.genericCaptureHandlers[connectCode] = handlers
 	} else {
-		galactus.genericCaptureHandlers[connectCode] = make([]func(msg capture_message.CaptureMessage), 1)
-		galactus.genericCaptureHandlers[connectCode][0] = f.(func(msg capture_message.CaptureMessage))
+		galactus.genericCaptureHandlers[connectCode] = make([]func(msg capture.Event), 1)
+		galactus.genericCaptureHandlers[connectCode][0] = f.(func(msg capture.Event))
 	}
 	galactus.logger.Info("generic capture message handler registered")
 	return true
