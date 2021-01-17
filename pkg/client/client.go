@@ -16,17 +16,21 @@ import (
 )
 
 type GalactusClient struct {
-	Address                    string
-	logger                     *zap.Logger
-	client                     http.Client
-	killChannel                chan struct{}
+	Address string
+	logger  *zap.Logger
+	client  http.Client
+
+	// we'll have capture channels for every relevant connect code
+	captureKillChannels map[string]chan struct{}
+	discordKillChannel  chan struct{}
+
 	messageCreateHandlers      []func(m discordgo.MessageCreate)
 	messageReactionAddHandlers []func(m discordgo.MessageReactionAdd)
 	voiceStateUpdateHandlers   []func(m discordgo.VoiceStateUpdate)
 	guildDeleteHandlers        []func(m discordgo.GuildDelete)
 	guildCreateHandlers        []func(m discordgo.GuildCreate)
 
-	genericCaptureHandlers []func(msg capture_message.CaptureMessage)
+	genericCaptureHandlers map[string][]func(msg capture_message.CaptureMessage)
 }
 
 func NewGalactusClient(address string, logger *zap.Logger) (*GalactusClient, error) {
@@ -36,13 +40,15 @@ func NewGalactusClient(address string, logger *zap.Logger) (*GalactusClient, err
 		client:  http.Client{
 			// Note: any relevant config here
 		},
-		killChannel:                nil,
+		captureKillChannels: make(map[string]chan struct{}),
+		discordKillChannel:  nil,
+
 		messageCreateHandlers:      make([]func(m discordgo.MessageCreate), 0),
 		messageReactionAddHandlers: make([]func(m discordgo.MessageReactionAdd), 0),
 		voiceStateUpdateHandlers:   make([]func(m discordgo.VoiceStateUpdate), 0),
 		guildDeleteHandlers:        make([]func(m discordgo.GuildDelete), 0),
 		guildCreateHandlers:        make([]func(m discordgo.GuildCreate), 0),
-		genericCaptureHandlers:     make([]func(m capture_message.CaptureMessage), 0),
+		genericCaptureHandlers:     make(map[string][]func(m capture_message.CaptureMessage)),
 	}
 	r, err := http.Get(gc.Address + "/")
 	if err != nil {
@@ -64,22 +70,31 @@ const (
 )
 
 func (galactus *GalactusClient) StartPolling(pollingType PollingType, connectCode string) error {
-	if galactus.killChannel != nil {
-		return errors.New("client is already polling")
-	}
+	var channel chan struct{}
 	if pollingType == CapturePolling {
 		valid, err := validate.ValidConnectCode(connectCode)
 		if !valid {
 			return err
 		}
+		if _, ok := galactus.captureKillChannels[connectCode]; ok {
+			return errors.New("already polling for capture events for connect code " + connectCode)
+		}
+		galactus.captureKillChannels[connectCode] = make(chan struct{})
+		channel = galactus.captureKillChannels[connectCode]
+	} else {
+		if galactus.discordKillChannel != nil {
+			return errors.New("already polling for discord events")
+		}
+		galactus.discordKillChannel = make(chan struct{})
+		channel = galactus.discordKillChannel
 	}
-	galactus.killChannel = make(chan struct{})
+
 	connected := false
 
 	go func() {
 		for {
 			select {
-			case <-galactus.killChannel:
+			case <-channel:
 				return
 
 			default:
@@ -96,7 +111,7 @@ func (galactus *GalactusClient) StartPolling(pollingType PollingType, connectCod
 						zap.String("url", url))
 					break
 				}
-				req.Cancel = galactus.killChannel
+				req.Cancel = channel
 
 				response, err := http.DefaultClient.Do(req)
 				if err != nil {
@@ -137,7 +152,7 @@ func (galactus *GalactusClient) StartPolling(pollingType PollingType, connectCod
 									zap.Error(err),
 									zap.ByteString("message", body))
 							} else {
-								galactus.dispatchCaptureMessage(msg)
+								galactus.dispatchCaptureMessage(connectCode, msg)
 							}
 						}
 
@@ -215,15 +230,30 @@ func (galactus *GalactusClient) dispatchDiscordMessage(msg discord_message.Disco
 	}
 }
 
-func (galactus *GalactusClient) dispatchCaptureMessage(msg capture_message.CaptureMessage) {
-	for _, v := range galactus.genericCaptureHandlers {
-		v(msg)
+func (galactus *GalactusClient) dispatchCaptureMessage(connectCode string, msg capture_message.CaptureMessage) {
+	if handlers, ok := galactus.genericCaptureHandlers[connectCode]; ok {
+		for _, v := range handlers {
+			v(msg)
+		}
 	}
 }
 
-func (galactus *GalactusClient) StopPolling() {
-	if galactus.killChannel != nil {
-		galactus.killChannel <- struct{}{}
+func (galactus *GalactusClient) StopCapturePolling(connectCode string) {
+	if galactus.captureKillChannels[connectCode] != nil {
+		galactus.captureKillChannels[connectCode] <- struct{}{}
+	}
+}
+
+func (galactus *GalactusClient) StopDiscordPolling() {
+	if galactus.discordKillChannel != nil {
+		galactus.discordKillChannel <- struct{}{}
+	}
+}
+
+func (galactus *GalactusClient) StopAllPolling() {
+	galactus.StopDiscordPolling()
+	for _, v := range galactus.captureKillChannels {
+		v <- struct{}{}
 	}
 }
 
@@ -256,8 +286,14 @@ func (galactus *GalactusClient) RegisterDiscordHandler(msgType discord_message.D
 	return registered
 }
 
-func (galactus *GalactusClient) RegisterCaptureHandler(f interface{}) bool {
-	galactus.genericCaptureHandlers = append(galactus.genericCaptureHandlers, f.(func(msg capture_message.CaptureMessage)))
+func (galactus *GalactusClient) RegisterCaptureHandler(connectCode string, f interface{}) bool {
+	if handlers, ok := galactus.genericCaptureHandlers[connectCode]; ok {
+		handlers = append(handlers, f.(func(msg capture_message.CaptureMessage)))
+		galactus.genericCaptureHandlers[connectCode] = handlers
+	} else {
+		galactus.genericCaptureHandlers[connectCode] = make([]func(msg capture_message.CaptureMessage), 1)
+		galactus.genericCaptureHandlers[connectCode][0] = f.(func(msg capture_message.CaptureMessage))
+	}
 	galactus.logger.Info("generic capture message handler registered")
 	return true
 }
