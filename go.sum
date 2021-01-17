@@ -28,6 +28,8 @@ github.com/automuteus/utils v0.0.11-0.20210117015211-09544f155513 h1:PjaCnn/wyjv
 github.com/automuteus/utils v0.0.11-0.20210117015211-09544f155513/go.mod h1:rCHtrQ3nNXdagcOKW8Mcr4wAW3CaXyB1aArsdMtXS30=
 github.com/automuteus/utils v0.0.11-0.20210117083518-7f1a542914b9 h1:BE1YZQbHohq3VmnhMb4wSggEBZ+doClDH2ZELAH/oRE=
 github.com/automuteus/utils v0.0.11-0.20210117083518-7f1a542914b9/go.mod h1:rCHtrQ3nNXdagcOKW8Mcr4wAW3CaXyB1aArsdMtXS30=
+github.com/automuteus/utils v0.0.11-0.20210117090606-d48d8a0c6a4b h1:5WCoZsyNqCvAQQ3Sr4Xgb90IFzMZooXA/VgWJ03OHEU=
+github.com/automuteus/utils v0.0.11-0.20210117090606-d48d8a0c6a4b/go.mod h1:rCHtrQ3nNXdagcOKW8Mcr4wAW3CaXyB1aArsdMtXS30=
 github.com/bsm/redislock v0.7.0 h1:RL7aZJhCKkuBjQbnSTKCeedTRifBWxd/ffP+GZ599Mo=
 github.com/bsm/redislock v0.7.0/go.mod h1:3Kgu+cXw0JrkZ5pmY/JbcFpixGZ5M9v9G2PGWYqku+k=
 github.com/bwmarrin/discordgo v0.22.0/go.mod h1:c1WtWUGN6nREDmzIpyTp/iD3VYt4Fpx+bVyfBG7JE+M=

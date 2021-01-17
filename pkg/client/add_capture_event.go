@@ -12,7 +12,7 @@ import (
 
 func (galactus *GalactusClient) AddCaptureEvent(connectCode string, event capture.Event) error {
 	url := fmt.Sprintf("%s%s/%d", galactus.Address+endpoint.AddCaptureEventPartial, connectCode, event.EventType)
-	resp, err := galactus.client.Post(url, "application/json", bytes.NewBuffer(event.Payload.([]byte)))
+	resp, err := galactus.client.Post(url, "application/json", bytes.NewBuffer(event.Payload))
 	if err != nil {
 		return err
 	}
