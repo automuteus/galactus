@@ -5,7 +5,7 @@ import (
 	"github.com/automuteus/galactus/internal/galactus/shard_manager"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
-	"github.com/automuteus/utils/pkg/task"
+	"github.com/automuteus/utils/pkg/discord"
 	"go.uber.org/zap"
 	"io/ioutil"
 	"log"
@@ -36,7 +36,7 @@ func (galactus *GalactusAPI) modifyUserHandler(maxWorkers int, taskTimeout time.
 		}
 		defer r.Body.Close()
 
-		userModifications := task.UserModifyRequest{}
+		userModifications := discord.UserModifyRequest{}
 		err = json.Unmarshal(body, &userModifications)
 		if err != nil {
 			log.Println(err)
@@ -48,10 +48,10 @@ func (galactus *GalactusAPI) modifyUserHandler(maxWorkers int, taskTimeout time.
 		limit := PremiumBotConstraints[userModifications.Premium]
 		tokens := galactus.getAllTokensForGuild(guildID)
 
-		tasksChannel := make(chan task.UserModify, len(userModifications.Users))
+		tasksChannel := make(chan discord.UserModify, len(userModifications.Users))
 		wg := sync.WaitGroup{}
 
-		mdsc := task.MuteDeafenSuccessCounts{
+		mdsc := discord.MuteDeafenSuccessCounts{
 			Worker:    0,
 			Capture:   0,
 			Official:  0,
@@ -87,7 +87,7 @@ func (galactus *GalactusAPI) modifyUserHandler(maxWorkers int, taskTimeout time.
 								)
 							}
 
-							err = task.ApplyMuteDeaf(sess, guildID, userIDStr, request.Mute, request.Deaf)
+							err = discord.ApplyMuteDeaf(sess, guildID, userIDStr, request.Mute, request.Deaf)
 							if err != nil {
 								galactus.logger.Error("error applying mute/deaf on official bot",
 									zap.Error(err),

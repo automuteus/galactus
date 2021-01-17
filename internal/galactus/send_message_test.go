@@ -24,7 +24,7 @@ func TestGalactusAPI_SendChannelMessageHandler(t *testing.T) {
 	defer galactus.Close()
 
 	m := mux.NewRouter()
-	m.HandleFunc(endpoint.SendMessageFull, SendChannelMessageHandler(galactus.logger, galactus.shardManager))
+	m.HandleFunc(endpoint.SendMessageFull, galactus.SendChannelMessageHandler())
 
 	ts := httptest.NewServer(m)
 	defer ts.Close()

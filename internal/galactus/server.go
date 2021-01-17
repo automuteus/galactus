@@ -167,6 +167,9 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, captureAckTimeout 
 	// TODO maybe eventually provide some auth parameter, or version number? Something to prove that a worker can pop requests?
 	r := mux.NewRouter()
 
+	r.HandleFunc("/", galactus.indexHandler()).Methods("GET")
+	r.HandleFunc(endpoint.JobCount, galactus.jobCount()).Methods("GET")
+
 	r.HandleFunc(endpoint.ModifyUserbyGuildConnectCode, galactus.modifyUserHandler(maxWorkers, captureAckTimeout)).Methods("POST")
 	r.HandleFunc(endpoint.SendMessageFull, galactus.SendChannelMessageHandler()).Methods("POST")
 	r.HandleFunc(endpoint.SendMessageEmbedFull, galactus.SendChannelMessageEmbedHandler()).Methods("POST")
@@ -188,12 +191,6 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, captureAckTimeout 
 	r.HandleFunc(endpoint.SetCaptureTaskStatusFull, galactus.SetCaptureTaskStatusHandler()).Methods("POST")
 
 	r.HandleFunc(endpoint.RequestJob, galactus.requestJobHandler(taskTimeout)).Methods("POST")
-	r.HandleFunc(endpoint.JobCount, galactus.jobCount()).Methods("GET")
-
-	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("ok"))
-	}).Methods("GET")
 
 	galactus.logger.Info("galactus is running",
 		zap.String("port", port),
@@ -204,6 +201,41 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, captureAckTimeout 
 		galactus.logger.Error("http listener exited with error",
 			zap.Error(err),
 		)
+	}
+}
+
+func (galactus *GalactusAPI) indexHandler() func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// TODO For any higher-sensitivity info in the future, this should properly identify the origin specifically
+		w.Header().Set("Access-Control-Allow-Origin", "*")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length")
+
+		// default to listing active games in the last 15 mins
+		activeGames := rediskey.GetActiveGames(context.Background(), galactus.client, 900)
+		version, commit := rediskey.GetVersionAndCommit(context.Background(), galactus.client)
+		totalGuilds := rediskey.GetGuildCounter(context.Background(), galactus.client)
+		totalUsers := rediskey.GetTotalUsers(context.Background(), galactus.client)
+		totalGames := rediskey.GetTotalGames(context.Background(), galactus.client)
+
+		data := map[string]interface{}{
+			"version":     version,
+			"commit":      commit,
+			"totalGuilds": totalGuilds,
+			"activeGames": activeGames,
+			"totalUsers":  totalUsers,
+			"totalGames":  totalGames,
+		}
+
+		w.WriteHeader(http.StatusOK)
+		jsonBytes, err := json.Marshal(data)
+		if err != nil {
+			galactus.logger.Error("error marshalling data for index endpoint",
+				zap.Error(err),
+			)
+		} else {
+			w.Write(jsonBytes)
+		}
 	}
 }
 

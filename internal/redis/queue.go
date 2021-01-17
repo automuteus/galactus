@@ -5,8 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/automuteus/galactus/pkg/discord_message"
+	"github.com/automuteus/utils/pkg/discord"
 	"github.com/automuteus/utils/pkg/rediskey"
-	"github.com/automuteus/utils/pkg/task"
 	"github.com/go-redis/redis/v8"
 	"time"
 )
@@ -36,7 +36,7 @@ func PopRawDiscordMessageTimeout(client *redis.Client, timeout time.Duration) (s
 	return res[1], nil
 }
 
-func PushCaptureClientTask(client *redis.Client, connectCode string, taskObj task.ModifyTask, expiry time.Duration) error {
+func PushCaptureClientTask(client *redis.Client, connectCode string, taskObj discord.ModifyTask, expiry time.Duration) error {
 	jBytes, err := json.Marshal(taskObj)
 	if err != nil {
 		return err

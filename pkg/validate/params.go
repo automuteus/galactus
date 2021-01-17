@@ -1,9 +1,11 @@
 package validate
 
 import (
+	"github.com/automuteus/utils/pkg/capture"
 	"github.com/gorilla/mux"
 	"go.uber.org/zap"
 	"net/http"
+	"strconv"
 )
 
 func ChannelAndMessageIDsAndRespond(logger *zap.Logger, w http.ResponseWriter, r *http.Request, endpoint string) (string, string) {
@@ -173,4 +175,26 @@ func TaskIDAndRespond(logger *zap.Logger, w http.ResponseWriter, r *http.Request
 		return ""
 	}
 	return taskID
+}
+
+func EventTypeAndRespond(logger *zap.Logger, w http.ResponseWriter, r *http.Request, endpoint string) (bool, capture.EventType) {
+	vars := mux.Vars(r)
+	eventType := vars["eventType"]
+	e, err := strconv.ParseInt(eventType, 10, 64)
+	if err != nil {
+		return false, 0
+	}
+	valid, err := ValidEventType(int(e))
+	if !valid {
+		errMsg := "eventType provided to " + endpoint + " is invalid"
+		logger.Error(errMsg,
+			zap.Error(err),
+			zap.String("eventType", eventType),
+			zap.String("endpoint", endpoint),
+		)
+		w.WriteHeader(http.StatusBadRequest)
+		w.Write([]byte(errMsg))
+		return false, 0
+	}
+	return true, capture.EventType(e)
 }

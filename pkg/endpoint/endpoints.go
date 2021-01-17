@@ -4,7 +4,7 @@ const RequestJob = "/request/job"
 const JobCount = "/totalJobs"
 
 const AddCaptureEventPartial = "/addCaptureEvent/"
-const AddCaptureEventFull = AddCaptureEventPartial + "{connectCode}"
+const AddCaptureEventFull = AddCaptureEventPartial + "{connectCode}/{eventType}"
 
 const GetCaptureTaskPartial = "/getCaptureTask/"
 const GetCaptureTaskFull = GetCaptureTaskPartial + "{connectCode}"

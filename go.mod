@@ -5,7 +5,7 @@ go 1.15
 require (
 	github.com/alicebob/miniredis v2.5.0+incompatible // indirect
 	github.com/alicebob/miniredis/v2 v2.14.1
-	github.com/automuteus/utils v0.0.9
+	github.com/automuteus/utils v0.0.10
 	github.com/bsm/redislock v0.7.0
 	github.com/bwmarrin/discordgo v0.22.1
 	github.com/go-redis/redis v6.15.9+incompatible // indirect
@@ -18,4 +18,4 @@ require (
 	go.uber.org/zap v1.16.0
 )
 
-replace github.com/automuteus/utils v0.0.9 => github.com/automuteus/utils v0.0.11-0.20210116220058-40ad795561c0
+replace github.com/automuteus/utils v0.0.10 => github.com/automuteus/utils v0.0.11-0.20210117015211-09544f155513

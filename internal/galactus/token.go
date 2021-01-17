@@ -3,18 +3,18 @@ package galactus
 import (
 	"context"
 	"github.com/automuteus/galactus/internal/redis"
+	"github.com/automuteus/utils/pkg/discord"
 	"github.com/automuteus/utils/pkg/rediskey"
-	"github.com/automuteus/utils/pkg/task"
 	"go.uber.org/zap"
 	"log"
 	"time"
 )
 
-func (galactus *GalactusAPI) attemptOnSecondaryTokens(guildID, userID string, tokens []string, limit int, request task.UserModify) bool {
+func (galactus *GalactusAPI) attemptOnSecondaryTokens(guildID, userID string, tokens []string, limit int, request discord.UserModify) bool {
 	if tokens != nil && limit > 0 {
 		sess, hToken := galactus.getAnySession(guildID, tokens, limit)
 		if sess != nil {
-			err := task.ApplyMuteDeaf(sess, guildID, userID, request.Mute, request.Deaf)
+			err := discord.ApplyMuteDeaf(sess, guildID, userID, request.Mute, request.Deaf)
 			if err != nil {
 				galactus.logger.Error("failed to apply mute/deaf on secondary bot",
 					zap.Error(err),
@@ -51,11 +51,11 @@ func (galactus *GalactusAPI) attemptOnSecondaryTokens(guildID, userID string, to
 
 var UnresponsiveCaptureBlacklistDuration = time.Minute * time.Duration(5)
 
-func (galactus *GalactusAPI) attemptOnCaptureBot(guildID, connectCode string, gid uint64, timeout time.Duration, request task.UserModify) bool {
+func (galactus *GalactusAPI) attemptOnCaptureBot(guildID, connectCode string, gid uint64, timeout time.Duration, request discord.UserModify) bool {
 	// this is cheeky, but use the connect code as part of the lock; don't issue too many requests on the capture client w/ this code
 	if galactus.IncrAndTestGuildTokenComboLock(guildID, connectCode) {
 		// if the secondary token didn't work, then next we try the client-side capture request
-		taskObj := task.NewModifyTask(gid, request.UserID, task.PatchParams{
+		taskObj := discord.NewModifyTask(gid, request.UserID, discord.PatchParams{
 			Deaf: request.Deaf,
 			Mute: request.Mute,
 		})
