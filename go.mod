@@ -17,5 +17,5 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.16.0
 )
-
-replace github.com/automuteus/utils v0.0.10 => github.com/automuteus/utils v0.0.11-0.20210117015211-09544f155513
+// TODO replace when V7 comes out
+replace github.com/automuteus/utils v0.0.10 => github.com/automuteus/utils v0.0.11-0.20210117083518-7f1a542914b9

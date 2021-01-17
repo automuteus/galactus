@@ -90,11 +90,13 @@ func (galactus *GalactusClient) StartPolling(pollingType PollingType, connectCod
 	}
 
 	connected := false
+	requestCancelChannel := make(chan struct{})
 
 	go func() {
 		for {
 			select {
 			case <-channel:
+				requestCancelChannel <- struct{}{}
 				return
 
 			default:
@@ -111,7 +113,7 @@ func (galactus *GalactusClient) StartPolling(pollingType PollingType, connectCod
 						zap.String("url", url))
 					break
 				}
-				req.Cancel = channel
+				req.Cancel = requestCancelChannel
 
 				response, err := http.DefaultClient.Do(req)
 				if err != nil {
@@ -242,18 +244,20 @@ func (galactus *GalactusClient) StopCapturePolling(connectCode string) {
 	if galactus.captureKillChannels[connectCode] != nil {
 		galactus.captureKillChannels[connectCode] <- struct{}{}
 	}
+	delete(galactus.captureKillChannels, connectCode)
 }
 
 func (galactus *GalactusClient) StopDiscordPolling() {
 	if galactus.discordKillChannel != nil {
 		galactus.discordKillChannel <- struct{}{}
 	}
+	galactus.discordKillChannel = nil
 }
 
 func (galactus *GalactusClient) StopAllPolling() {
 	galactus.StopDiscordPolling()
-	for _, v := range galactus.captureKillChannels {
-		v <- struct{}{}
+	for i := range galactus.captureKillChannels {
+		galactus.StopCapturePolling(i)
 	}
 }
 

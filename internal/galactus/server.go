@@ -190,6 +190,9 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, captureAckTimeout 
 	r.HandleFunc(endpoint.GetCaptureTaskFull, galactus.GetCaptureTaskHandler(taskTimeout)).Methods("POST")
 	r.HandleFunc(endpoint.SetCaptureTaskStatusFull, galactus.SetCaptureTaskStatusHandler()).Methods("POST")
 
+	r.HandleFunc(endpoint.AddCaptureEventFull, galactus.AddCaptureEventHandler()).Methods("POST")
+	r.HandleFunc(endpoint.GetCaptureEventFull, galactus.GetCaptureEventHandler(taskTimeout)).Methods("POST")
+
 	r.HandleFunc(endpoint.RequestJob, galactus.requestJobHandler(taskTimeout)).Methods("POST")
 
 	galactus.logger.Info("galactus is running",
