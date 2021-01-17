@@ -5,14 +5,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"github.com/automuteus/utils/pkg/task"
+	"github.com/automuteus/utils/pkg/discord"
 	"github.com/bsm/redislock"
 	"io/ioutil"
 	"log"
 	"net/http"
 )
 
-func (galactus *GalactusClient) ModifyUsers(guildID, connectCode string, request task.UserModifyRequest, lock *redislock.Lock) *task.MuteDeafenSuccessCounts {
+func (galactus *GalactusClient) ModifyUsers(guildID, connectCode string, request discord.UserModifyRequest, lock *redislock.Lock) *discord.MuteDeafenSuccessCounts {
 	if lock != nil {
 		defer lock.Release(context.Background())
 	}
@@ -35,7 +35,7 @@ func (galactus *GalactusClient) ModifyUsers(guildID, connectCode string, request
 		return nil
 	}
 
-	mds := task.MuteDeafenSuccessCounts{}
+	mds := discord.MuteDeafenSuccessCounts{}
 	jBytes, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
 		log.Println(err)
