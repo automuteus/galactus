@@ -165,41 +165,45 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, captureAckTimeout 
 	galactus.loadTokensFromEnv()
 
 	// TODO maybe eventually provide some auth parameter, or version number? Something to prove that a worker can pop requests?
-	r := mux.NewRouter()
+	mainRouter := mux.NewRouter()
 
-	r.HandleFunc("/", galactus.indexHandler()).Methods("GET")
-	r.HandleFunc(endpoint.JobCount, galactus.jobCount()).Methods("GET")
+	generalRouter := mainRouter.PathPrefix(endpoint.GeneralRoute).Subrouter()
+	captureRouter := mainRouter.PathPrefix(endpoint.CaptureRoute).Subrouter()
+	discordRouter := mainRouter.PathPrefix(endpoint.DiscordRoute).Subrouter()
+	settingsRouter := mainRouter.PathPrefix(endpoint.SettingsRoute).Subrouter()
 
-	r.HandleFunc(endpoint.ModifyUserbyGuildConnectCode, galactus.modifyUserHandler(maxWorkers, captureAckTimeout)).Methods("POST")
-	r.HandleFunc(endpoint.SendMessageFull, galactus.SendChannelMessageHandler()).Methods("POST")
-	r.HandleFunc(endpoint.SendMessageEmbedFull, galactus.SendChannelMessageEmbedHandler()).Methods("POST")
-	r.HandleFunc(endpoint.EditMessageEmbedFull, galactus.EditMessageEmbedHandler()).Methods("POST")
-	r.HandleFunc(endpoint.DeleteMessageFull, galactus.DeleteChannelMessageHandler()).Methods("POST")
-	r.HandleFunc(endpoint.GetGuildFull, galactus.GetGuildHandler()).Methods("POST")
-	r.HandleFunc(endpoint.GetGuildChannelsFull, galactus.GetGuildChannelsHandler()).Methods("POST")
-	r.HandleFunc(endpoint.GetGuildMemberFull, galactus.GetGuildMemberHandler()).Methods("POST")
-	r.HandleFunc(endpoint.GetGuildRolesFull, galactus.GetGuildRolesHandler()).Methods("POST")
-	r.HandleFunc(endpoint.AddReactionFull, galactus.AddReactionHandler()).Methods("POST")
-	r.HandleFunc(endpoint.RemoveReactionFull, galactus.RemoveReactionHandler()).Methods("POST")
-	r.HandleFunc(endpoint.RemoveAllReactionsFull, galactus.RemoveAllReactionsHandler()).Methods("POST")
-	r.HandleFunc(endpoint.UserChannelCreateFull, galactus.CreateUserChannelHandler()).Methods("POST")
-	r.HandleFunc(endpoint.GetGuildEmojisFull, galactus.GetGuildEmojisHandler()).Methods("POST")
-	r.HandleFunc(endpoint.CreateGuildEmojiFull, galactus.CreateGuildEmojiHandler()).Methods("POST")
+	generalRouter.HandleFunc("/", galactus.indexHandler()).Methods("GET")
 
-	r.HandleFunc(endpoint.GetGuildAMUSettingsFull, galactus.GetGuildAMUSettings()).Methods("POST")
-	r.HandleFunc(endpoint.GetCaptureTaskFull, galactus.GetCaptureTaskHandler(taskTimeout)).Methods("POST")
-	r.HandleFunc(endpoint.SetCaptureTaskStatusFull, galactus.SetCaptureTaskStatusHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.ModifyUserFull, galactus.modifyUserHandler(maxWorkers, captureAckTimeout)).Methods("POST")
+	discordRouter.HandleFunc(endpoint.SendMessageFull, galactus.SendChannelMessageHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.SendMessageEmbedFull, galactus.SendChannelMessageEmbedHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.EditMessageEmbedFull, galactus.EditMessageEmbedHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.DeleteMessageFull, galactus.DeleteChannelMessageHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.GetGuildFull, galactus.GetGuildHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.GetGuildChannelsFull, galactus.GetGuildChannelsHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.GetGuildMemberFull, galactus.GetGuildMemberHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.GetGuildRolesFull, galactus.GetGuildRolesHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.AddReactionFull, galactus.AddReactionHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.RemoveReactionFull, galactus.RemoveReactionHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.RemoveAllReactionsFull, galactus.RemoveAllReactionsHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.UserChannelCreateFull, galactus.CreateUserChannelHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.GetGuildEmojisFull, galactus.GetGuildEmojisHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.CreateGuildEmojiFull, galactus.CreateGuildEmojiHandler()).Methods("POST")
 
-	r.HandleFunc(endpoint.AddCaptureEventFull, galactus.AddCaptureEventHandler()).Methods("POST")
-	r.HandleFunc(endpoint.GetCaptureEventFull, galactus.GetCaptureEventHandler(taskTimeout)).Methods("POST")
+	settingsRouter.HandleFunc(endpoint.GetGuildAMUSettingsFull, galactus.GetGuildAMUSettings()).Methods("POST")
 
-	r.HandleFunc(endpoint.RequestJob, galactus.requestJobHandler(taskTimeout)).Methods("POST")
+	captureRouter.HandleFunc(endpoint.JobCount, galactus.jobCount()).Methods("GET")
+	captureRouter.HandleFunc(endpoint.GetCaptureTaskFull, galactus.GetCaptureTaskHandler(taskTimeout)).Methods("POST")
+	captureRouter.HandleFunc(endpoint.SetCaptureTaskStatusFull, galactus.SetCaptureTaskStatusHandler()).Methods("POST")
+	captureRouter.HandleFunc(endpoint.AddCaptureEventFull, galactus.AddCaptureEventHandler()).Methods("POST")
+	captureRouter.HandleFunc(endpoint.GetCaptureEventFull, galactus.GetCaptureEventHandler(taskTimeout)).Methods("POST")
+	captureRouter.HandleFunc(endpoint.RequestJob, galactus.requestJobHandler(taskTimeout)).Methods("POST")
 
 	galactus.logger.Info("galactus is running",
 		zap.String("port", port),
 	)
 
-	err := http.ListenAndServe(":"+port, r)
+	err := http.ListenAndServe(":"+port, mainRouter)
 	if err != nil {
 		galactus.logger.Error("http listener exited with error",
 			zap.Error(err),

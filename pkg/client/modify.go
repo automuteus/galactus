@@ -4,11 +4,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
+	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/utils/pkg/discord"
 	"github.com/bsm/redislock"
+	"go.uber.org/zap"
 	"io/ioutil"
-	"log"
 	"net/http"
 )
 
@@ -16,16 +16,13 @@ func (galactus *GalactusClient) ModifyUsers(guildID, connectCode string, request
 	if lock != nil {
 		defer lock.Release(context.Background())
 	}
-
-	fullURL := fmt.Sprintf("%s/modify/%s/%s", galactus.Address, guildID, connectCode)
+	url := endpoint.FormGalactusURL(galactus.Address, endpoint.DiscordRoute, endpoint.ModifyUserPartial, guildID, connectCode)
 	jBytes, err := json.Marshal(request)
 	if err != nil {
 		return nil
 	}
 
-	log.Println(request)
-
-	resp, err := galactus.client.Post(fullURL, "application/json", bytes.NewBuffer(jBytes))
+	resp, err := galactus.client.Post(url, "application/json", bytes.NewBuffer(jBytes))
 	if err != nil {
 		return nil
 	}
@@ -38,12 +35,18 @@ func (galactus *GalactusClient) ModifyUsers(guildID, connectCode string, request
 	mds := discord.MuteDeafenSuccessCounts{}
 	jBytes, err = ioutil.ReadAll(resp.Body)
 	if err != nil {
-		log.Println(err)
+		galactus.logger.Error("error reading all bytes from message body",
+			zap.Error(err),
+			zap.String("url", url),
+		)
 		return &mds
 	}
 	err = json.Unmarshal(jBytes, &mds)
 	if err != nil {
-		log.Println(err)
+		galactus.logger.Error("error unmarshalling response body",
+			zap.Error(err),
+			zap.String("url", url),
+		)
 		return &mds
 	}
 	return &mds

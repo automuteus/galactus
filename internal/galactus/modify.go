@@ -17,8 +17,8 @@ import (
 
 func (galactus *GalactusAPI) modifyUserHandler(maxWorkers int, taskTimeout time.Duration) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		guildID := validate.GuildIDAndRespond(galactus.logger, w, r, endpoint.ModifyUserbyGuildConnectCode)
-		connectCode := validate.ConnectCodeAndRespond(galactus.logger, w, r, endpoint.ModifyUserbyGuildConnectCode)
+		guildID := validate.GuildIDAndRespond(galactus.logger, w, r, endpoint.ModifyUserFull)
+		connectCode := validate.ConnectCodeAndRespond(galactus.logger, w, r, endpoint.ModifyUserFull)
 
 		if guildID == "" || connectCode == "" {
 			return

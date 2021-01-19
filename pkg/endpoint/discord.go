@@ -1,5 +1,7 @@
 package endpoint
 
+const DiscordRoute = "/api/discord"
+
 const SendMessagePartial = "/sendMessage/"
 const SendMessageFull = SendMessagePartial + "{channelID}"
 
@@ -21,7 +23,8 @@ const RemoveAllReactionsFull = RemoveAllReactionsPartial + "{channelID}/{message
 const AddReactionPartial = "/addReaction/"
 const AddReactionFull = AddReactionPartial + "{channelID}/{messageID}/{emojiID}"
 
-const ModifyUserbyGuildConnectCode = "/modify/{guildID}/{connectCode}"
+const ModifyUserPartial = "/modifyUser/"
+const ModifyUserFull = ModifyUserPartial + "{guildID}/{connectCode}"
 
 const GetGuildPartial = "/guild/"
 const GetGuildFull = GetGuildPartial + "{guildID}"
