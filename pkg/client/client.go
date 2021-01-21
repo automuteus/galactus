@@ -50,7 +50,7 @@ func NewGalactusClient(address string, logger *zap.Logger) (*GalactusClient, err
 		guildCreateHandlers:        make([]func(m discordgo.GuildCreate), 0),
 		genericCaptureHandlers:     make(map[string][]func(m capture.Event)),
 	}
-	r, err := http.Get(gc.Address + "/")
+	r, err := http.Get(gc.Address + endpoint.GeneralRoute + "/")
 	if err != nil {
 		return &gc, err
 	}
@@ -103,9 +103,9 @@ func (galactus *GalactusClient) StartPolling(pollingType PollingType, connectCod
 				var url string
 				switch pollingType {
 				case DiscordPolling:
-					url = galactus.Address + endpoint.RequestJob
+					url = endpoint.FormGalactusURL(galactus.Address, endpoint.DiscordRoute, endpoint.RequestJob)
 				case CapturePolling:
-					url = galactus.Address + endpoint.GetCaptureEventPartial + connectCode
+					url = endpoint.FormGalactusURL(galactus.Address, endpoint.CaptureRoute, endpoint.GetCaptureEventPartial)
 				}
 				req, err := http.NewRequest("POST", url, bytes.NewBufferString(""))
 				if err != nil {

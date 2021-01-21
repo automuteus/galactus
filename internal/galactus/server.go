@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
-	"github.com/alicebob/miniredis/v2"
 	"github.com/automuteus/galactus/internal/galactus/shard_manager"
 	redisutils "github.com/automuteus/galactus/internal/redis"
 	"github.com/automuteus/galactus/pkg/endpoint"
@@ -48,28 +47,18 @@ type GalactusAPI struct {
 	logger *zap.Logger
 }
 
-func NewGalactusAPI(logger *zap.Logger, mockRedis bool, botToken, redisAddr, redisUser, redisPass string, maxReq int64) *GalactusAPI {
+func NewGalactusAPI(logger *zap.Logger, botToken, redisAddr, redisUser, redisPass string, maxReq int64, botPrefix string) *GalactusAPI {
 	var rdb *redis.Client
-	if mockRedis {
-		mr, err := miniredis.Run()
-		if err != nil {
-			panic(err)
-		}
 
-		rdb = redis.NewClient(&redis.Options{
-			Addr: mr.Addr(),
-		})
-	} else {
-		rdb = redis.NewClient(&redis.Options{
-			Addr:     redisAddr,
-			Username: redisUser,
-			Password: redisPass,
-			DB:       0, // use default DB
-		})
-	}
+	rdb = redis.NewClient(&redis.Options{
+		Addr:     redisAddr,
+		Username: redisUser,
+		Password: redisPass,
+		DB:       0, // use default DB
+	})
 
 	manager := shard_manager.MakeShardManager(logger, botToken, DefaultIntents)
-	shard_manager.AddHandlers(logger, manager, rdb)
+	shard_manager.AddHandlers(logger, manager, rdb, botPrefix)
 
 	return &GalactusAPI{
 		client:              rdb,

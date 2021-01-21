@@ -8,28 +8,16 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
+	"strings"
 )
 
-func MessageCreateHandler(logger *zap.Logger, client *redis.Client) func(s *discordgo.Session, m *discordgo.MessageCreate) {
+func MessageCreateHandler(logger *zap.Logger, client *redis.Client, globalPrefix string) func(s *discordgo.Session, m *discordgo.MessageCreate) {
 	return func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if m == nil {
 			return
 		}
 		// ignore messages created by the bot
 		if m.Author == nil || m.Author.ID == s.State.User.ID {
-			return
-		}
-
-		// TODO should find an efficient way to hook into a guild's prefix here. Would allow for filtering messages
-		// quickly without pushing them into the queue
-
-		// TODO softban the users at this level; bot logic shouldn't have to worry about it
-
-		if redis_utils.IsUserBanned(client, m.Author.ID) {
-			logger.Info("ignoring message from softbanned user",
-				zap.String("author ID", m.Author.ID),
-				zap.String("message ID", m.Message.ID),
-				zap.String("contents", m.Message.Content))
 			return
 		}
 
@@ -44,6 +32,40 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client) func(s *disc
 		}
 		defer snowflakeLock.Release(context.Background())
 
+		if redis_utils.IsUserBanned(client, m.Author.ID) {
+			logger.Info("ignoring message from softbanned user",
+				zap.String("author ID", m.Author.ID),
+				zap.String("message ID", m.Message.ID),
+				zap.String("contents", m.Message.Content))
+			return
+		}
+
+		detectedPrefix := ""
+		sett, err := redis_utils.GetSettingsFromRedis(client, m.GuildID)
+
+		if sett != nil && err == nil {
+			if strings.HasPrefix(m.Content, sett.CommandPrefix) {
+				detectedPrefix = sett.CommandPrefix
+			}
+		}
+
+		if detectedPrefix == "" {
+			if strings.HasPrefix(m.Content, "<@!"+s.State.User.ID+">") {
+				detectedPrefix = "<@!" + s.State.User.ID + ">"
+			} else if strings.HasPrefix(m.Content, globalPrefix) {
+				detectedPrefix = globalPrefix
+			}
+		}
+
+		// wasn't a message for the bot; don't push to redis
+		if detectedPrefix == "" {
+			return
+		}
+
+		m.Content = stripPrefix(m.Content, detectedPrefix)
+
+		// TODO softban the users at this level; bot logic shouldn't have to worry about it
+
 		byt, err := json.Marshal(m)
 		if err != nil {
 			logger.Error("error marshalling json for MessageCreate message",
@@ -54,7 +76,22 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client) func(s *disc
 			logger.Error("error pushing discord message to Redis for MessageCreate message",
 				zap.Error(err))
 		} else {
-			LogDiscordMessagePush(logger, discord_message.MessageCreate, m.GuildID, m.ChannelID, m.Author.ID, m.ID)
+			logger.Info("pushed discord message to Redis",
+				zap.String("type", discord_message.DiscordMessageTypeStrings[discord_message.MessageCreate]),
+				zap.String("guild_id", m.GuildID),
+				zap.String("channel_id", m.ChannelID),
+				zap.String("user_id", m.Author.ID),
+				zap.String("id", m.ID),
+			)
 		}
 	}
+}
+
+func stripPrefix(msg, prefix string) string {
+	newMsg := strings.Replace(msg, prefix+"", "", 1)
+	// didn't substitute anything
+	if len(newMsg) == len(msg) {
+		return strings.Replace(msg, prefix, "", 1)
+	}
+	return newMsg
 }

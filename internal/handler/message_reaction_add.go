@@ -30,7 +30,13 @@ func MessageReactionAddHandler(logger *zap.Logger, client *redis.Client) func(s 
 			logger.Error("error pushing to Redis for MessageReactionAdd message",
 				zap.Error(err))
 		} else {
-			LogDiscordMessagePush(logger, discord_message.MessageReactionAdd, m.GuildID, m.ChannelID, m.UserID, m.MessageID)
+			logger.Info("pushed discord message to Redis",
+				zap.String("type", discord_message.DiscordMessageTypeStrings[discord_message.MessageReactionAdd]),
+				zap.String("guild_id", m.GuildID),
+				zap.String("channel_id", m.ChannelID),
+				zap.String("user_id", m.UserID),
+				zap.String("id", m.MessageID),
+			)
 		}
 	}
 }

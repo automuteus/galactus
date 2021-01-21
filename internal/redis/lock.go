@@ -23,12 +23,3 @@ func LockSnowflake(ctx context.Context, client *redis.Client, snowflake string) 
 	}
 	return lock
 }
-
-func IsUserBanned(client *redis.Client, userID string) bool {
-	v, err := client.Exists(context.Background(), rediskey.UserSoftban(userID)).Result()
-	if err != nil {
-		log.Println(err)
-		return false
-	}
-	return v == 1 // = 1 means the user is present, and thus rate-limited
-}

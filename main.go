@@ -11,13 +11,13 @@ import (
 	"time"
 )
 
-const MockRedis = false
-
 const DefaultGalactusPort = "5858"
+
 const DefaultMaxRequests5Sec int64 = 7
 const DefaultMaxWorkers = 8
 const DefaultCaptureBotTimeout = time.Second
 const DefaultTaskTimeout = time.Second * 10
+const DefaultBotPrefix = ".au"
 
 func main() {
 	logger, err := zap.NewProduction()
@@ -92,6 +92,11 @@ func main() {
 			zap.Int("default", maxWorkers))
 	}
 
+	botPrefix := DefaultBotPrefix
+	if os.Getenv("AUTOMUTEUS_GLOBAL_PREFIX") != "" {
+		botPrefix = os.Getenv("AUTOMUTEUS_GLOBAL_PREFIX")
+	}
+
 	logger.Info("loaded env",
 		zap.String("DISCORD_BOT_TOKEN", botToken),
 		zap.String("REDIS_ADDR", redisAddr),
@@ -100,9 +105,10 @@ func main() {
 		zap.Int("MAX_REQ_5_SEC", int(maxReq)),
 		zap.Int("MAX_WORKERS", maxWorkers),
 		zap.Int64("ACK_TIMEOUT_MS", captureAckTimeout.Milliseconds()),
+		zap.String("AUTOMUTEUS_GLOBAL_PREFIX", botPrefix),
 	)
 
-	tp := galactus.NewGalactusAPI(logger, MockRedis, botToken, redisAddr, redisUser, redisPass, maxReq)
+	tp := galactus.NewGalactusAPI(logger, botToken, redisAddr, redisUser, redisPass, maxReq, botToken)
 
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)

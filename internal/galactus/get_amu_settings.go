@@ -1,14 +1,10 @@
 package galactus
 
 import (
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
+	redis_utils "github.com/automuteus/galactus/internal/redis"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
-	"github.com/automuteus/utils/pkg/rediskey"
-	"github.com/automuteus/utils/pkg/settings"
 	"go.uber.org/zap"
 	"net/http"
 )
@@ -20,43 +16,27 @@ func (galactus *GalactusAPI) GetGuildAMUSettings() func(w http.ResponseWriter, r
 			return
 		}
 
-		key := rediskey.GuildSettings(HashGuildID(guildID))
-		var sett settings.GuildSettings
-
-		str, err := galactus.client.Get(context.Background(), key).Result()
+		sett, err := redis_utils.GetSettingsFromRedis(galactus.client, guildID)
 		if err != nil {
 			errMsg := "error when fetching guild AMU settings"
 			galactus.logger.Error(errMsg,
 				zap.Error(err),
 				zap.String("guildID", guildID),
 			)
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte(errMsg + ": " + err.Error()))
-			return
-		}
-		err = json.Unmarshal([]byte(str), &sett)
-		if err != nil {
-			errMsg := "error when unmarshalling guild AMU settings"
-			galactus.logger.Error(errMsg,
-				zap.Error(err),
-				zap.String("guildID", guildID),
-				zap.String("data", str),
-			)
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte(errMsg + ": " + err.Error()))
 			return
 		}
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(str))
+		jBytes, err := json.Marshal(sett)
+		if err != nil {
+			galactus.logger.Error("encountered an impossible error when marshalling guild settings that were just unmarshalled...",
+				zap.Error(err),
+				zap.String("guildID", guildID),
+			)
+			w.WriteHeader(http.StatusInternalServerError)
+		} else {
+			w.WriteHeader(http.StatusOK)
+			w.Write(jBytes)
+		}
 	}
-}
-
-func HashGuildID(guildID string) string {
-	return genericHash(guildID)
-}
-
-func genericHash(s string) string {
-	h := sha256.New()
-	h.Write([]byte(s))
-	return hex.EncodeToString(h.Sum(nil))
 }

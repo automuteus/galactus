@@ -11,6 +11,9 @@ import (
 	"time"
 )
 
+//if no w
+const DiscordMessageTimeout = time.Second * 5
+
 const GatewayMessageKey = "automuteus:gateway:message"
 
 func PushDiscordMessage(client *redis.Client, messageType discord_message.DiscordMessageType, data []byte) error {
@@ -23,7 +26,13 @@ func PushDiscordMessage(client *redis.Client, messageType discord_message.Discor
 		return err
 	}
 
-	return client.LPush(context.Background(), GatewayMessageKey, byt).Err()
+	err = client.LPush(context.Background(), GatewayMessageKey, byt).Err()
+	if err != nil {
+		return err
+	}
+
+	client.Expire(context.Background(), GatewayMessageKey, DiscordMessageTimeout)
+	return err
 }
 
 func PopRawDiscordMessageTimeout(client *redis.Client, timeout time.Duration) (string, error) {

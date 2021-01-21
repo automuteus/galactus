@@ -42,12 +42,12 @@ func MakeShardManager(logger *zap.Logger, token string, intent *discordgo.Intent
 	return manager
 }
 
-func AddHandlers(logger *zap.Logger, manager *dshardmanager.Manager, client *redis.Client) {
+func AddHandlers(logger *zap.Logger, manager *dshardmanager.Manager, client *redis.Client, botPrefix string) {
 	manager.AddHandler(handler.GuildCreateHandler(logger, client))
 	manager.AddHandler(handler.GuildDeleteHandler(logger, client))
 
 	manager.AddHandler(handler.VoiceStateUpdateHandler(logger, client))
-	manager.AddHandler(handler.MessageCreateHandler(logger, client))
+	manager.AddHandler(handler.MessageCreateHandler(logger, client, botPrefix))
 	manager.AddHandler(handler.MessageReactionAddHandler(logger, client))
 
 	manager.AddHandler(handler.RateLimitHandler(logger, client))

@@ -24,7 +24,12 @@ func GuildCreateHandler(logger *zap.Logger, client *redis.Client) func(s *discor
 			logger.Error("error pushing discord message to Redis for GuildCreate",
 				zap.Error(err))
 		} else {
-			LogDiscordMessagePush(logger, discord_message.GuildCreate, m.ID, "", m.OwnerID, m.ID)
+			logger.Info("pushed discord message to Redis",
+				zap.String("type", discord_message.DiscordMessageTypeStrings[discord_message.GuildCreate]),
+				zap.String("guild_id", m.ID),
+				zap.String("user_id", m.OwnerID),
+				zap.String("id", m.ID),
+			)
 		}
 	}
 }

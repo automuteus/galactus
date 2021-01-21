@@ -24,7 +24,12 @@ func GuildDeleteHandler(logger *zap.Logger, client *redis.Client) func(s *discor
 			logger.Error("error pushing to Redis for GuildDelete message",
 				zap.Error(err))
 		} else {
-			LogDiscordMessagePush(logger, discord_message.GuildDelete, m.ID, "", m.OwnerID, m.ID)
+			logger.Info("pushed discord message to Redis",
+				zap.String("type", discord_message.DiscordMessageTypeStrings[discord_message.GuildDelete]),
+				zap.String("guild_id", m.ID),
+				zap.String("user_id", m.OwnerID),
+				zap.String("id", m.ID),
+			)
 		}
 	}
 }
