@@ -62,9 +62,9 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client, globalPrefix
 			return
 		}
 
-		m.Content = stripPrefix(m.Content, detectedPrefix)
-
 		// TODO softban the users at this level; bot logic shouldn't have to worry about it
+
+		m.Content = stripPrefix(m.Content, detectedPrefix)
 
 		byt, err := json.Marshal(m)
 		if err != nil {

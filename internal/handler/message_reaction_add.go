@@ -1,9 +1,11 @@
 package handler
 
 import (
+	"context"
 	"encoding/json"
 	redis_utils "github.com/automuteus/galactus/internal/redis"
 	"github.com/automuteus/galactus/pkg/discord_message"
+	"github.com/automuteus/utils/pkg/rediskey"
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
@@ -17,6 +19,12 @@ func MessageReactionAddHandler(logger *zap.Logger, client *redis.Client) func(s 
 
 		// ignore reactions from the bot
 		if m.UserID == s.State.User.ID {
+			return
+		}
+
+		// if no active games in this text channel, completely ignore this message reaction message
+		res, err := client.Exists(context.Background(), rediskey.TextChannelPtr(m.GuildID, m.ChannelID)).Result()
+		if err != nil || res == 0 {
 			return
 		}
 

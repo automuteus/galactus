@@ -11,8 +11,21 @@ import (
 
 func VoiceStateUpdateHandler(logger *zap.Logger, client *redis.Client) func(s *discordgo.Session, m *discordgo.VoiceStateUpdate) {
 	return func(s *discordgo.Session, m *discordgo.VoiceStateUpdate) {
-		// TODO filter voice changes when a game isn't happening in this guild.
-		// probably won't work to filter changes just by the voice channel ID; results in ppl not being unmuted when they leave the VC
+		if m == nil {
+			return
+		}
+		// ignore the bot
+		if m.UserID == s.State.User.ID {
+			return
+		}
+
+		// if no active games, completely ignore message reactions
+		if !redis_utils.AnyActiveGamesInGuild(client, m.GuildID) {
+			return
+		}
+
+		// a game is happening in this guild; in the background, make sure it's pruned of inactive games
+		go redis_utils.PurgeOldGuildGames(client, m.GuildID)
 
 		byt, err := json.Marshal(m)
 		if err != nil {
