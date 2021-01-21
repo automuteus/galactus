@@ -163,6 +163,8 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, captureAckTimeout 
 
 	generalRouter.HandleFunc("/", galactus.indexHandler()).Methods("GET")
 
+	discordRouter.HandleFunc(endpoint.JobCount, galactus.jobCount()).Methods("GET")
+	discordRouter.HandleFunc(endpoint.RequestJob, galactus.requestJobHandler(taskTimeout)).Methods("POST")
 	discordRouter.HandleFunc(endpoint.ModifyUserFull, galactus.modifyUserHandler(maxWorkers, captureAckTimeout)).Methods("POST")
 	discordRouter.HandleFunc(endpoint.SendMessageFull, galactus.SendChannelMessageHandler()).Methods("POST")
 	discordRouter.HandleFunc(endpoint.SendMessageEmbedFull, galactus.SendChannelMessageEmbedHandler()).Methods("POST")
@@ -181,12 +183,10 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, captureAckTimeout 
 
 	settingsRouter.HandleFunc(endpoint.GetGuildAMUSettingsFull, galactus.GetGuildAMUSettings()).Methods("POST")
 
-	captureRouter.HandleFunc(endpoint.JobCount, galactus.jobCount()).Methods("GET")
 	captureRouter.HandleFunc(endpoint.GetCaptureTaskFull, galactus.GetCaptureTaskHandler(taskTimeout)).Methods("POST")
 	captureRouter.HandleFunc(endpoint.SetCaptureTaskStatusFull, galactus.SetCaptureTaskStatusHandler()).Methods("POST")
 	captureRouter.HandleFunc(endpoint.AddCaptureEventFull, galactus.AddCaptureEventHandler()).Methods("POST")
 	captureRouter.HandleFunc(endpoint.GetCaptureEventFull, galactus.GetCaptureEventHandler(taskTimeout)).Methods("POST")
-	captureRouter.HandleFunc(endpoint.RequestJob, galactus.requestJobHandler(taskTimeout)).Methods("POST")
 
 	galactus.logger.Info("galactus is running",
 		zap.String("port", port),

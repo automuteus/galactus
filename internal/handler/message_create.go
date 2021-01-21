@@ -62,7 +62,18 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client, globalPrefix
 			return
 		}
 
-		// TODO softban the users at this level; bot logic shouldn't have to worry about it
+		if redis_utils.IsUserRateLimitedGeneral(client, m.Author.ID) {
+			// record the violation with this call
+			if redis_utils.IncrementRateLimitExceed(client, m.Author.ID) {
+				// NOTE user is banned here
+
+				return
+			} else {
+				// NOTE user is warned here
+				return
+			}
+		}
+		redis_utils.MarkUserRateLimit(client, m.Author.ID, "", 0)
 
 		m.Content = stripPrefix(m.Content, detectedPrefix)
 
@@ -88,7 +99,7 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client, globalPrefix
 }
 
 func stripPrefix(msg, prefix string) string {
-	newMsg := strings.Replace(msg, prefix+"", "", 1)
+	newMsg := strings.Replace(msg, prefix+" ", "", 1)
 	// didn't substitute anything
 	if len(newMsg) == len(msg) {
 		return strings.Replace(msg, prefix, "", 1)

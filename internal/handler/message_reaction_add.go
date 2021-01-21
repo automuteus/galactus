@@ -28,6 +28,19 @@ func MessageReactionAddHandler(logger *zap.Logger, client *redis.Client) func(s 
 			return
 		}
 
+		if redis_utils.IsUserRateLimitedGeneral(client, m.UserID) {
+			// record the violation with this call
+			if redis_utils.IncrementRateLimitExceed(client, m.UserID) {
+				// NOTE user is banned here
+
+				return
+			} else {
+				// NOTE user is warned here
+				return
+			}
+		}
+		redis_utils.MarkUserRateLimit(client, m.UserID, "", 0)
+
 		byt, err := json.Marshal(m)
 		if err != nil {
 			logger.Error("error marshalling json for MessageReactionAdd message",
