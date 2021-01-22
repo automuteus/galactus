@@ -2,9 +2,6 @@ package endpoint
 
 const CaptureRoute = "/api/capture"
 
-const JobCount = "/totalJobs"
-const RequestJob = "/request/job"
-
 const AddCaptureEventPartial = "/addCaptureEvent/"
 const AddCaptureEventFull = AddCaptureEventPartial + "{connectCode}/{eventType}"
 

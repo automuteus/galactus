@@ -103,9 +103,9 @@ func (galactus *GalactusClient) StartPolling(pollingType PollingType, connectCod
 				var url string
 				switch pollingType {
 				case DiscordPolling:
-					url = endpoint.FormGalactusURL(galactus.Address, endpoint.DiscordRoute, endpoint.RequestJob)
+					url = endpoint.FormGalactusURL(galactus.Address, endpoint.DiscordRoute, endpoint.DiscordJobRequest)
 				case CapturePolling:
-					url = endpoint.FormGalactusURL(galactus.Address, endpoint.CaptureRoute, endpoint.GetCaptureEventPartial)
+					url = endpoint.FormGalactusURL(galactus.Address, endpoint.CaptureRoute, endpoint.GetCaptureEventPartial, connectCode)
 				}
 				req, err := http.NewRequest("POST", url, bytes.NewBufferString(""))
 				if err != nil {

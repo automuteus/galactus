@@ -163,8 +163,8 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, captureAckTimeout 
 
 	generalRouter.HandleFunc("/", galactus.indexHandler()).Methods("GET")
 
-	discordRouter.HandleFunc(endpoint.JobCount, galactus.jobCount()).Methods("GET")
-	discordRouter.HandleFunc(endpoint.RequestJob, galactus.requestJobHandler(taskTimeout)).Methods("POST")
+	discordRouter.HandleFunc(endpoint.DiscordJobCount, galactus.jobCount()).Methods("GET")
+	discordRouter.HandleFunc(endpoint.DiscordJobRequest, galactus.requestJobHandler(taskTimeout)).Methods("POST")
 	discordRouter.HandleFunc(endpoint.ModifyUserFull, galactus.modifyUserHandler(maxWorkers, captureAckTimeout)).Methods("POST")
 	discordRouter.HandleFunc(endpoint.SendMessageFull, galactus.SendChannelMessageHandler()).Methods("POST")
 	discordRouter.HandleFunc(endpoint.SendMessageEmbedFull, galactus.SendChannelMessageEmbedHandler()).Methods("POST")
@@ -249,14 +249,14 @@ func (galactus *GalactusAPI) requestJobHandler(timeout time.Duration) func(w htt
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte("{\"error\": \"" + err.Error() + "\"}"))
 			galactus.logger.Error("redis error when popping job",
-				zap.String("endpoint", endpoint.RequestJob),
+				zap.String("endpoint", endpoint.DiscordJobRequest),
 				zap.Error(err))
 			return
 		case msg == "":
 			w.WriteHeader(http.StatusInternalServerError)
 			w.Write([]byte("{\"error\": \"Nil job returned, despite no Redis errors\"}"))
 			galactus.logger.Error("nil job returned, despite no Redis errors",
-				zap.String("endpoint", endpoint.RequestJob))
+				zap.String("endpoint", endpoint.DiscordJobRequest))
 			return
 		}
 
@@ -265,7 +265,7 @@ func (galactus *GalactusAPI) requestJobHandler(timeout time.Duration) func(w htt
 		_, err = w.Write([]byte(msg))
 		if err != nil {
 			galactus.logger.Error("failed to write job as HTTP response",
-				zap.String("endpoint", endpoint.RequestJob),
+				zap.String("endpoint", endpoint.DiscordJobRequest),
 				zap.Error(err),
 			)
 		}

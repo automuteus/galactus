@@ -2,6 +2,9 @@ package endpoint
 
 const DiscordRoute = "/api/discord"
 
+const DiscordJobCount = "/job/count"
+const DiscordJobRequest = "/job/request"
+
 const SendMessagePartial = "/sendMessage/"
 const SendMessageFull = SendMessagePartial + "{channelID}"
 
