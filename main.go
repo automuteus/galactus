@@ -45,8 +45,8 @@ func main() {
 	redisUser := os.Getenv("REDIS_USER")
 	redisPass := os.Getenv("REDIS_PASS")
 
-	maxReq5Sec := os.Getenv("MAX_REQ_5_SEC")
 	maxReq := DefaultMaxRequests5Sec
+	maxReq5Sec := os.Getenv("MAX_REQ_5_SEC")
 	if maxReq5Sec != "" {
 		num, err := strconv.ParseInt(maxReq5Sec, 10, 64)
 		if err == nil {
@@ -58,7 +58,6 @@ func main() {
 	}
 
 	captureAckTimeout := DefaultCaptureBotTimeout
-
 	captureAckTimeoutStr := os.Getenv("ACK_TIMEOUT_MS")
 	num, err := strconv.ParseInt(captureAckTimeoutStr, 10, 64)
 	if err == nil {
@@ -70,7 +69,6 @@ func main() {
 	}
 
 	taskTimeout := DefaultTaskTimeout
-
 	taskTimeoutStr := os.Getenv("TASK_TIMEOUT_MS")
 	num, err = strconv.ParseInt(taskTimeoutStr, 10, 64)
 	if err == nil {

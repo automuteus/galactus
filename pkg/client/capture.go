@@ -15,7 +15,7 @@ import (
 
 func (galactus *GalactusClient) AddCaptureEvent(connectCode string, event capture.Event) error {
 	str := strconv.FormatInt(int64(event.EventType), 10)
-	url := endpoint.FormGalactusURL(galactus.Address, endpoint.CaptureRoute, endpoint.GetCaptureEventPartial, connectCode, str)
+	url := endpoint.FormGalactusURL(galactus.Address, endpoint.CaptureRoute, endpoint.AddCaptureEventPartial, connectCode, str)
 	resp, err := galactus.client.Post(url, "application/json", bytes.NewBuffer(event.Payload))
 	if err != nil {
 		return err
