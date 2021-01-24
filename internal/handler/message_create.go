@@ -3,12 +3,14 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	redis_utils "github.com/automuteus/galactus/internal/redis"
 	"github.com/automuteus/galactus/pkg/discord_message"
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-redis/redis/v8"
 	"go.uber.org/zap"
 	"strings"
+	"time"
 )
 
 func MessageCreateHandler(logger *zap.Logger, client *redis.Client, globalPrefix string) func(s *discordgo.Session, m *discordgo.MessageCreate) {
@@ -63,14 +65,32 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client, globalPrefix
 			return
 		}
 
+		// TODO how to easily and cleanly localize these messages?
 		if redis_utils.IsUserRateLimitedGeneral(client, m.Author.ID) {
 			// record the violation with this call
 			if redis_utils.IncrementRateLimitExceed(client, m.Author.ID) {
-				// NOTE user is banned here
-
+				msg, err := s.ChannelMessageSend(m.ChannelID,
+					fmt.Sprintf("%s has been spamming. I'm ignoring them for the next %f minutes.",
+						discord_message.MentionByUserID(m.Author.ID),
+						redis_utils.SoftbanDuration.Minutes()))
+				if err != nil {
+					logger.Error("error posting ratelimit ban message",
+						zap.Error(err),
+					)
+				} else {
+					go discord_message.DeleteMessageWorker(s, msg.ChannelID, msg.ID, time.Second*3)
+				}
 				return
 			} else {
-				// NOTE user is warned here
+				msg, err := s.ChannelMessageSend(m.ChannelID, fmt.Sprintf("%s, you're issuing commands too fast! Please slow down!",
+					discord_message.MentionByUserID(m.Author.ID)))
+				if err != nil {
+					logger.Error("error posting ratelimit warning message",
+						zap.Error(err),
+					)
+				} else {
+					go discord_message.DeleteMessageWorker(s, msg.ChannelID, msg.ID, time.Second*3)
+				}
 				return
 			}
 		}

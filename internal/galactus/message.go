@@ -7,7 +7,6 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
 	"io/ioutil"
-	"log"
 	"net/http"
 )
 
@@ -64,7 +63,9 @@ func (galactus *GalactusAPI) SendChannelMessageHandler() func(w http.ResponseWri
 		w.WriteHeader(http.StatusOK)
 		jbytes, err := json.Marshal(msg)
 		if err != nil {
-			log.Println(err)
+			galactus.logger.Error("failed to marshal message to JSON",
+				zap.Error(err),
+			)
 		}
 		w.Write(jbytes)
 	}
@@ -135,7 +136,9 @@ func (galactus *GalactusAPI) SendChannelMessageEmbedHandler() func(w http.Respon
 		w.WriteHeader(http.StatusOK)
 		jbytes, err := json.Marshal(msg)
 		if err != nil {
-			log.Println(err)
+			galactus.logger.Error("failed to marshal embed message to JSON",
+				zap.Error(err),
+			)
 		}
 		w.Write(jbytes)
 	}
@@ -206,7 +209,9 @@ func (galactus *GalactusAPI) EditMessageEmbedHandler() func(w http.ResponseWrite
 
 		jbytes, err := json.Marshal(msg)
 		if err != nil {
-			log.Println(err)
+			galactus.logger.Error("failed to marshal edit embed message to JSON",
+				zap.Error(err),
+			)
 		}
 		w.Write(jbytes)
 	}

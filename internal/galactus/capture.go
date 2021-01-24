@@ -46,8 +46,6 @@ func (galactus *GalactusAPI) AddCaptureEventHandler() func(w http.ResponseWriter
 		}
 		defer r.Body.Close()
 
-		// TODO more validation on the payload here?
-
 		err = capture.PushEvent(context.Background(), galactus.client, connectCode, eventType, string(body))
 		if err != nil {
 			errMsg := "error pushing capture job to Redis"
@@ -59,6 +57,10 @@ func (galactus *GalactusAPI) AddCaptureEventHandler() func(w http.ResponseWriter
 			w.Write([]byte(errMsg + ": " + err.Error()))
 			return
 		}
+		galactus.logger.Info("added capture event",
+			zap.String("connectCode", connectCode),
+			zap.ByteString("event", body),
+		)
 
 		w.WriteHeader(http.StatusOK)
 	}
@@ -94,15 +96,19 @@ func (galactus *GalactusAPI) GetCaptureEventHandler(timeout time.Duration) func(
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
-
 		_, err = w.Write([]byte(msg))
 		if err != nil {
 			galactus.logger.Error("failed to write capture event as HTTP response",
 				zap.String("endpoint", endpoint.GetCaptureEventFull),
 				zap.Error(err),
 			)
+			return
 		}
+		galactus.logger.Info("popped capture event",
+			zap.String("connectCode", connectCode),
+			zap.String("event", msg),
+		)
+		w.WriteHeader(http.StatusOK)
 	}
 }
 
@@ -136,15 +142,19 @@ func (galactus *GalactusAPI) GetCaptureTaskHandler(taskTimeout time.Duration) fu
 			return
 		}
 
-		w.WriteHeader(http.StatusOK)
-
 		_, err = w.Write([]byte(msg))
 		if err != nil {
 			galactus.logger.Error("failed to write capture task as HTTP response",
 				zap.String("endpoint", endpoint.GetCaptureTaskFull),
 				zap.Error(err),
 			)
+			return
 		}
+		galactus.logger.Info("popped capture task",
+			zap.String("connectCode", connectCode),
+			zap.String("task", msg),
+		)
+		w.WriteHeader(http.StatusOK)
 	}
 }
 
@@ -183,6 +193,10 @@ func (galactus *GalactusAPI) SetCaptureTaskStatusHandler() func(w http.ResponseW
 			w.Write([]byte(errMsg + ": " + err.Error()))
 			return
 		}
+		galactus.logger.Info("wrote task status",
+			zap.String("taskID", taskID),
+			zap.String("value", out),
+		)
 		w.WriteHeader(http.StatusOK)
 	}
 }

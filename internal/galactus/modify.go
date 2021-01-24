@@ -7,7 +7,6 @@ import (
 	"github.com/automuteus/utils/pkg/discord"
 	"go.uber.org/zap"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"strconv"
 	"sync"
@@ -28,7 +27,8 @@ func (galactus *GalactusAPI) modifyUserHandler(maxWorkers int, taskTimeout time.
 
 		body, err := ioutil.ReadAll(r.Body)
 		if err != nil {
-			log.Println(err)
+			galactus.logger.Error("failed to read HTTP request body",
+				zap.Error(err))
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte(err.Error()))
 			return
@@ -38,7 +38,8 @@ func (galactus *GalactusAPI) modifyUserHandler(maxWorkers int, taskTimeout time.
 		userModifications := discord.UserModifyRequest{}
 		err = json.Unmarshal(body, &userModifications)
 		if err != nil {
-			log.Println(err)
+			galactus.logger.Error("failed to unmarshal user modification request",
+				zap.Error(err))
 			w.WriteHeader(http.StatusBadRequest)
 			w.Write([]byte(err.Error()))
 			return
@@ -123,11 +124,13 @@ func (galactus *GalactusAPI) modifyUserHandler(maxWorkers int, taskTimeout time.
 
 		jbytes, err := json.Marshal(mdsc)
 		if err != nil {
-			log.Println(err)
+			galactus.logger.Error("failed to marshal mutedeafensuccesscounts to JSON",
+				zap.Error(err))
 		} else {
 			_, err := w.Write(jbytes)
 			if err != nil {
-				log.Println(err)
+				galactus.logger.Error("failed to write out json response",
+					zap.Error(err))
 			}
 		}
 	}

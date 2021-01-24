@@ -46,6 +46,10 @@ func (galactus *GalactusAPI) CreateUserChannelHandler() func(w http.ResponseWrit
 			w.Write([]byte(errMsg + ": " + err.Error()))
 			return
 		}
+		galactus.logger.Info("created user channel",
+			zap.String("userID", userID),
+			zap.String("channelID", channel.ID),
+		)
 		w.WriteHeader(http.StatusOK)
 		w.Write(jBytes)
 	}

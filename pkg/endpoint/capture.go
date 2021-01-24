@@ -2,14 +2,14 @@ package endpoint
 
 const CaptureRoute = "/api/capture"
 
-const AddCaptureEventPartial = "/addCaptureEvent/"
+const AddCaptureEventPartial = "/event/add/"
 const AddCaptureEventFull = AddCaptureEventPartial + "{connectCode}/{eventType}"
 
-const GetCaptureEventPartial = "/getCaptureEvent/"
+const GetCaptureEventPartial = "/event/get/"
 const GetCaptureEventFull = GetCaptureEventPartial + "{connectCode}"
 
-const GetCaptureTaskPartial = "/getCaptureTask/"
+const GetCaptureTaskPartial = "/task/get/"
 const GetCaptureTaskFull = GetCaptureTaskPartial + "{connectCode}"
 
-const SetCaptureTaskStatusPartial = "/setCaptureTaskStatus/"
+const SetCaptureTaskStatusPartial = "/task/set/"
 const SetCaptureTaskStatusFull = SetCaptureTaskStatusPartial + "{taskID}"

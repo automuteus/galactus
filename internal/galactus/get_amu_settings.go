@@ -34,9 +34,13 @@ func (galactus *GalactusAPI) GetGuildAMUSettings() func(w http.ResponseWriter, r
 				zap.String("guildID", guildID),
 			)
 			w.WriteHeader(http.StatusInternalServerError)
-		} else {
-			w.WriteHeader(http.StatusOK)
-			w.Write(jBytes)
+			return
 		}
+		galactus.logger.Info("fetched guild settings",
+			zap.String("guildID", guildID),
+			zap.ByteString("settings", jBytes),
+		)
+		w.WriteHeader(http.StatusOK)
+		w.Write(jBytes)
 	}
 }

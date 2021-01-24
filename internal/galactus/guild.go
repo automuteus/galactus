@@ -6,7 +6,6 @@ import (
 	"github.com/automuteus/galactus/pkg/validate"
 	"go.uber.org/zap"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"strconv"
 )
@@ -55,6 +54,9 @@ func (galactus *GalactusAPI) GetGuildHandler() func(w http.ResponseWriter, r *ht
 			w.Write([]byte(errMsg + ": " + err.Error()))
 			return
 		}
+		galactus.logger.Info("fetched guild",
+			zap.String("guildID", guildID),
+		)
 		w.WriteHeader(http.StatusOK)
 		w.Write(jBytes)
 	}
@@ -98,6 +100,9 @@ func (galactus *GalactusAPI) GetGuildChannelsHandler() func(w http.ResponseWrite
 			w.Write([]byte(errMsg + ": " + err.Error()))
 			return
 		}
+		galactus.logger.Info("fetched guild channels",
+			zap.String("guildID", guildID),
+		)
 		w.WriteHeader(http.StatusOK)
 		w.Write(jBytes)
 	}
@@ -141,6 +146,9 @@ func (galactus *GalactusAPI) GetGuildEmojisHandler() func(w http.ResponseWriter,
 			w.Write([]byte(errMsg + ": " + err.Error()))
 			return
 		}
+		galactus.logger.Info("fetched guild emojis",
+			zap.String("guildID", guildID),
+		)
 		w.WriteHeader(http.StatusOK)
 		w.Write(jBytes)
 	}
@@ -186,6 +194,10 @@ func (galactus *GalactusAPI) GetGuildMemberHandler() func(w http.ResponseWriter,
 			w.Write([]byte(errMsg + ": " + err.Error()))
 			return
 		}
+		galactus.logger.Info("fetched guild member",
+			zap.String("guildID", guildID),
+			zap.String("userID", userID),
+		)
 		w.WriteHeader(http.StatusOK)
 		w.Write(jBytes)
 	}
@@ -229,6 +241,9 @@ func (galactus *GalactusAPI) GetGuildRolesHandler() func(w http.ResponseWriter, 
 			w.Write([]byte(errMsg + ": " + err.Error()))
 			return
 		}
+		galactus.logger.Info("fetched guild roles",
+			zap.String("guildID", guildID),
+		)
 		w.WriteHeader(http.StatusOK)
 		w.Write(jBytes)
 	}
@@ -292,8 +307,15 @@ func (galactus *GalactusAPI) CreateGuildEmojiHandler() func(w http.ResponseWrite
 		w.WriteHeader(http.StatusOK)
 		jbytes, err := json.Marshal(emoji)
 		if err != nil {
-			log.Println(err)
+			galactus.logger.Error("failed to marshal emoji to JSON",
+				zap.Error(err),
+			)
 		}
 		w.Write(jbytes)
+
+		galactus.logger.Info("created guild emoji",
+			zap.String("guildID", guildID),
+			zap.String("name", name),
+		)
 	}
 }

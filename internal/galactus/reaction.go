@@ -41,6 +41,11 @@ func (galactus *GalactusAPI) AddReactionHandler() func(w http.ResponseWriter, r 
 			w.Write([]byte(errMsg + ": " + err.Error()))
 			return
 		}
+		galactus.logger.Info("added reaction to channel message",
+			zap.String("channelID", channelID),
+			zap.String("messageID", messageID),
+			zap.String("emojiID", emojiID),
+		)
 
 		w.WriteHeader(http.StatusOK)
 	}
@@ -92,6 +97,12 @@ func (galactus *GalactusAPI) RemoveReactionHandler() func(w http.ResponseWriter,
 			w.Write([]byte(errMsg + ": " + err.Error()))
 			return
 		}
+		galactus.logger.Info("removed reaction on channel message",
+			zap.String("channelID", channelID),
+			zap.String("messageID", messageID),
+			zap.String("emojiID", emojiID),
+			zap.String("userID", userID),
+		)
 
 		w.WriteHeader(http.StatusOK)
 	}
@@ -124,6 +135,11 @@ func (galactus *GalactusAPI) RemoveAllReactionsHandler() func(w http.ResponseWri
 			w.Write([]byte(errMsg + ": " + err.Error()))
 			return
 		}
+
+		galactus.logger.Info("removed all reactions on channel message",
+			zap.String("channelID", channelID),
+			zap.String("messageID", messageID),
+		)
 
 		w.WriteHeader(http.StatusOK)
 	}
