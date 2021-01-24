@@ -2,7 +2,6 @@ package galactus
 
 import (
 	"encoding/json"
-	"github.com/automuteus/galactus/internal/galactus/shard_manager"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
 	"github.com/automuteus/utils/pkg/discord"
@@ -76,10 +75,9 @@ func (galactus *GalactusAPI) modifyUserHandler(maxWorkers int, taskTimeout time.
 							mdsc.Capture++
 							mdscLock.Unlock()
 						} else {
-							sess, err := shard_manager.GetRandomSession(galactus.shardManager)
-							if err != nil {
-								galactus.logger.Error("error fetching random session for user modify",
-									zap.Error(err),
+							sess := galactus.shardManager.Session(0)
+							if sess == nil {
+								galactus.logger.Error("error fetching session 0 for user modify",
 									zap.String("guildID", guildID),
 									zap.String("userID", userIDStr),
 									zap.Bool("mute", request.Mute),

@@ -1,7 +1,6 @@
 package galactus
 
 import (
-	"github.com/automuteus/galactus/internal/galactus/shard_manager"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
 	"github.com/gorilla/mux"
@@ -21,17 +20,15 @@ func (galactus *GalactusAPI) AddReactionHandler() func(w http.ResponseWriter, r 
 		vars := mux.Vars(r)
 		emojiID := vars["emojiID"]
 
-		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
-		if err != nil {
-			errMsg := "error obtaining random session for addReaction"
-			galactus.logger.Error(errMsg,
-				zap.Error(err),
-			)
+		sess := galactus.shardManager.Session(0)
+		if sess == nil {
+			errMsg := "error obtaining session 0 for " + endpoint.AddReactionFull
+			galactus.logger.Error(errMsg)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errMsg + ": " + err.Error()))
+			w.Write([]byte(errMsg))
 			return
 		}
-		err = sess.MessageReactionAdd(channelID, messageID, emojiID)
+		err := sess.MessageReactionAdd(channelID, messageID, emojiID)
 		if err != nil {
 			errMsg := "failed to addReaction"
 			galactus.logger.Error(errMsg,
@@ -73,14 +70,12 @@ func (galactus *GalactusAPI) RemoveReactionHandler() func(w http.ResponseWriter,
 			return
 		}
 
-		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
-		if err != nil {
-			errMsg := "error obtaining random session for removeReaction"
-			galactus.logger.Error(errMsg,
-				zap.Error(err),
-			)
+		sess := galactus.shardManager.Session(0)
+		if sess == nil {
+			errMsg := "error obtaining session 0 for " + endpoint.RemoveReactionFull
+			galactus.logger.Error(errMsg)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errMsg + ": " + err.Error()))
+			w.Write([]byte(errMsg))
 			return
 		}
 		err = sess.MessageReactionRemove(channelID, messageID, emojiID, userID)
@@ -109,17 +104,15 @@ func (galactus *GalactusAPI) RemoveAllReactionsHandler() func(w http.ResponseWri
 			return
 		}
 
-		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
-		if err != nil {
-			errMsg := "error obtaining random session for removeAllReactions"
-			galactus.logger.Error(errMsg,
-				zap.Error(err),
-			)
+		sess := galactus.shardManager.Session(0)
+		if sess == nil {
+			errMsg := "error obtaining session 0 for " + endpoint.RemoveAllReactionsFull
+			galactus.logger.Error(errMsg)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errMsg + ": " + err.Error()))
+			w.Write([]byte(errMsg))
 			return
 		}
-		err = sess.MessageReactionsRemoveAll(channelID, messageID)
+		err := sess.MessageReactionsRemoveAll(channelID, messageID)
 		if err != nil {
 			errMsg := "failed to remove all reactions"
 			galactus.logger.Error(errMsg,

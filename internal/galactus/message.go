@@ -2,7 +2,6 @@ package galactus
 
 import (
 	"encoding/json"
-	"github.com/automuteus/galactus/internal/galactus/shard_manager"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
 	"github.com/bwmarrin/discordgo"
@@ -34,14 +33,12 @@ func (galactus *GalactusAPI) SendChannelMessageHandler() func(w http.ResponseWri
 		// TODO perform some validation on the message body?
 		// ex message length, empty contents, etc
 
-		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
-		if err != nil {
-			errMsg := "error obtaining random session for sendMessageHandler"
-			galactus.logger.Error(errMsg,
-				zap.Error(err),
-			)
+		sess := galactus.shardManager.Session(0)
+		if sess == nil {
+			errMsg := "error obtaining session 0 for " + endpoint.SendMessageFull
+			galactus.logger.Error(errMsg)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errMsg + ": " + err.Error()))
+			w.Write([]byte(errMsg))
 			return
 		}
 
@@ -107,14 +104,12 @@ func (galactus *GalactusAPI) SendChannelMessageEmbedHandler() func(w http.Respon
 
 		// TODO extra validation here (empty embed fields and the like)
 
-		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
-		if err != nil {
-			errMsg := "error obtaining random session for sendMessageEmbedHandler"
-			galactus.logger.Error(errMsg,
-				zap.Error(err),
-			)
+		sess := galactus.shardManager.Session(0)
+		if sess == nil {
+			errMsg := "error obtaining session 0 for " + endpoint.SendMessageEmbedFull
+			galactus.logger.Error(errMsg)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errMsg + ": " + err.Error()))
+			w.Write([]byte(errMsg))
 			return
 		}
 
@@ -181,14 +176,12 @@ func (galactus *GalactusAPI) EditMessageEmbedHandler() func(w http.ResponseWrite
 		// TODO perform some validation on the message body?
 		// ex message length, empty contents, etc
 
-		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
-		if err != nil {
-			errMsg := "error obtaining random session for " + endpoint.EditMessageEmbedFull
-			galactus.logger.Error(errMsg,
-				zap.Error(err),
-			)
+		sess := galactus.shardManager.Session(0)
+		if sess == nil {
+			errMsg := "error obtaining session 0 for " + endpoint.EditMessageEmbedFull
+			galactus.logger.Error(errMsg)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errMsg + ": " + err.Error()))
+			w.Write([]byte(errMsg))
 			return
 		}
 		msg, err := sess.ChannelMessageEditEmbed(channelID, messageID, &embed)
@@ -229,17 +222,15 @@ func (galactus *GalactusAPI) DeleteChannelMessageHandler() func(w http.ResponseW
 		// TODO perform some validation on the message body?
 		// ex message length, empty contents, etc
 
-		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
-		if err != nil {
-			errMsg := "error obtaining random session for " + endpoint.DeleteMessageFull
-			galactus.logger.Error(errMsg,
-				zap.Error(err),
-			)
+		sess := galactus.shardManager.Session(0)
+		if sess == nil {
+			errMsg := "error obtaining session 0 for " + endpoint.DeleteMessageFull
+			galactus.logger.Error(errMsg)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errMsg + ": " + err.Error()))
+			w.Write([]byte(errMsg))
 			return
 		}
-		err = sess.ChannelMessageDelete(channelID, messageID)
+		err := sess.ChannelMessageDelete(channelID, messageID)
 		if err != nil {
 			errMsg := "error deleting message in channel"
 			galactus.logger.Error(errMsg,

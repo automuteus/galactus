@@ -2,7 +2,6 @@ package galactus
 
 import (
 	"encoding/json"
-	"github.com/automuteus/galactus/internal/galactus/shard_manager"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
 	"go.uber.org/zap"
@@ -68,14 +67,12 @@ func (galactus *GalactusAPI) GetGuildChannelsHandler() func(w http.ResponseWrite
 			return
 		}
 
-		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
-		if err != nil {
-			errMsg := "error obtaining random session for getGuildChannels"
-			galactus.logger.Error(errMsg,
-				zap.Error(err),
-			)
+		sess := galactus.shardManager.Session(0)
+		if sess == nil {
+			errMsg := "error obtaining session 0 for " + endpoint.GetGuildChannelsFull
+			galactus.logger.Error(errMsg)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errMsg + ": " + err.Error()))
+			w.Write([]byte(errMsg))
 			return
 		}
 		channels, err := sess.GuildChannels(guildID)
@@ -113,14 +110,12 @@ func (galactus *GalactusAPI) GetGuildEmojisHandler() func(w http.ResponseWriter,
 			return
 		}
 
-		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
-		if err != nil {
-			errMsg := "error obtaining random session for getGuildChannels"
-			galactus.logger.Error(errMsg,
-				zap.Error(err),
-			)
+		sess := galactus.shardManager.Session(0)
+		if sess == nil {
+			errMsg := "error obtaining session 0 for " + endpoint.GetGuildEmojisFull
+			galactus.logger.Error(errMsg)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errMsg + ": " + err.Error()))
+			w.Write([]byte(errMsg))
 			return
 		}
 		emojis, err := sess.GuildEmojis(guildID)
@@ -158,14 +153,12 @@ func (galactus *GalactusAPI) GetGuildMemberHandler() func(w http.ResponseWriter,
 			return
 		}
 
-		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
-		if err != nil {
-			errMsg := "error obtaining random session for getGuildMember"
-			galactus.logger.Error(errMsg,
-				zap.Error(err),
-			)
+		sess := galactus.shardManager.Session(0)
+		if sess == nil {
+			errMsg := "error obtaining session 0 for " + endpoint.GetGuildMemberFull
+			galactus.logger.Error(errMsg)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errMsg + ": " + err.Error()))
+			w.Write([]byte(errMsg))
 			return
 		}
 		member, err := sess.GuildMember(guildID, userID)
@@ -205,14 +198,12 @@ func (galactus *GalactusAPI) GetGuildRolesHandler() func(w http.ResponseWriter, 
 			return
 		}
 
-		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
-		if err != nil {
-			errMsg := "error obtaining random session for getGuildRoles"
-			galactus.logger.Error(errMsg,
-				zap.Error(err),
-			)
+		sess := galactus.shardManager.Session(0)
+		if sess == nil {
+			errMsg := "error obtaining session 0 for " + endpoint.GetGuildRolesFull
+			galactus.logger.Error(errMsg)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errMsg + ": " + err.Error()))
+			w.Write([]byte(errMsg))
 			return
 		}
 		roles, err := sess.GuildRoles(guildID)
@@ -268,14 +259,12 @@ func (galactus *GalactusAPI) CreateGuildEmojiHandler() func(w http.ResponseWrite
 
 		// Addl. constraint for emojis: must be under 256kB
 
-		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
-		if err != nil {
-			errMsg := "error obtaining random session for sendMessageHandler"
-			galactus.logger.Error(errMsg,
-				zap.Error(err),
-			)
+		sess := galactus.shardManager.Session(0)
+		if sess == nil {
+			errMsg := "error obtaining session 0 for " + endpoint.CreateGuildEmojiFull
+			galactus.logger.Error(errMsg)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errMsg + ": " + err.Error()))
+			w.Write([]byte(errMsg))
 			return
 		}
 

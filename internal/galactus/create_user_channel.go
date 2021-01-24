@@ -2,7 +2,6 @@ package galactus
 
 import (
 	"encoding/json"
-	"github.com/automuteus/galactus/internal/galactus/shard_manager"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
 	"go.uber.org/zap"
@@ -16,14 +15,12 @@ func (galactus *GalactusAPI) CreateUserChannelHandler() func(w http.ResponseWrit
 			return
 		}
 
-		sess, err := shard_manager.GetRandomSession(galactus.shardManager)
-		if err != nil {
-			errMsg := "error obtaining random session for getGuildMember"
-			galactus.logger.Error(errMsg,
-				zap.Error(err),
-			)
+		sess := galactus.shardManager.Session(0)
+		if sess == nil {
+			errMsg := "error obtaining session 0 for " + endpoint.UserChannelCreateFull
+			galactus.logger.Error(errMsg)
 			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errMsg + ": " + err.Error()))
+			w.Write([]byte(errMsg))
 			return
 		}
 		channel, err := sess.UserChannelCreate(userID)
