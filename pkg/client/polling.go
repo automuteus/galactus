@@ -43,7 +43,7 @@ func (galactus *GalactusClient) StartCapturePolling(connectCode string) error {
 		for {
 			req, err := http.NewRequest("POST", url, bytes.NewBufferString(""))
 			if err != nil {
-				galactus.logger.Error("invalid url provided to galactus client",
+				galactus.logger.Error("invalid URL provided to galactus client",
 					zap.String("url", url))
 				break
 			}
@@ -111,7 +111,7 @@ func (galactus *GalactusClient) StartDiscordPolling() error {
 		for {
 			req, err := http.NewRequest("POST", url, bytes.NewBufferString(""))
 			if err != nil {
-				galactus.logger.Error("invalid url provided to galactus client",
+				galactus.logger.Error("invalid URL provided to galactus client",
 					zap.String("url", url))
 				break
 			}

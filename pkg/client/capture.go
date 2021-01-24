@@ -2,6 +2,7 @@ package galactus_client
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"github.com/automuteus/galactus/pkg/endpoint"
@@ -65,9 +66,22 @@ func (galactus *GalactusClient) GetCaptureEvent(connectCode string) (*capture.Ev
 	return &event, nil
 }
 
-func (galactus *GalactusClient) GetCaptureTask(connectCode string) (*discord.ModifyTask, error) {
+func (galactus *GalactusClient) GetCaptureTask(ctx context.Context, connectCode string) (*discord.ModifyTask, error) {
 	url := endpoint.FormGalactusURL(galactus.Address, endpoint.CaptureRoute, endpoint.GetCaptureTaskPartial, connectCode)
-	resp, err := galactus.client.Post(url, "application/json", bytes.NewBufferString(""))
+
+	req, err := http.NewRequest("POST", url, bytes.NewBufferString(""))
+	if err != nil {
+		galactus.logger.Error("invalid URL provided to Galactus client",
+			zap.Error(err),
+			zap.String("url", url),
+		)
+		return nil, err
+	}
+
+	// allows the request to be abandoned if it is cancelled by the caller
+	req.WithContext(ctx)
+
+	resp, err := galactus.client.Do(req)
 	if err != nil {
 		return nil, err
 	}
