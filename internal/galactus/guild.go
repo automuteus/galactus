@@ -28,6 +28,7 @@ func (galactus *GalactusAPI) GetGuildHandler() func(w http.ResponseWriter, r *ht
 			w.Write([]byte(errMsg + ": " + err.Error()))
 			return
 		}
+		fromState := true
 		sess := galactus.shardManager.SessionForGuild(id)
 		guild, err := sess.State.Guild(guildID)
 		if err != nil {
@@ -36,12 +37,21 @@ func (galactus *GalactusAPI) GetGuildHandler() func(w http.ResponseWriter, r *ht
 				zap.Error(err),
 				zap.String("guildID", guildID),
 			)
-			w.WriteHeader(http.StatusInternalServerError)
-			w.Write([]byte(errMsg + ": " + err.Error()))
-			return
-		}
 
-		// TODO fetch the guild with an actual API call here? if it fails via state?
+			fromState = false
+			RecordDiscordRequest(galactus.client, Guild)
+			guild, err = sess.Guild(guildID)
+			if err != nil {
+				errMsg := "failed to fetch guild via API call"
+				galactus.logger.Error(errMsg,
+					zap.Error(err),
+					zap.String("guildID", guildID),
+				)
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte(errMsg + ": " + err.Error()))
+				return
+			}
+		}
 
 		jBytes, err := json.Marshal(guild)
 		if err != nil {
@@ -55,6 +65,7 @@ func (galactus *GalactusAPI) GetGuildHandler() func(w http.ResponseWriter, r *ht
 			return
 		}
 		galactus.logger.Info("fetched guild",
+			zap.Bool("fromState", fromState),
 			zap.String("guildID", guildID),
 		)
 		w.WriteHeader(http.StatusOK)
@@ -77,6 +88,7 @@ func (galactus *GalactusAPI) GetGuildChannelsHandler() func(w http.ResponseWrite
 			w.Write([]byte(errMsg))
 			return
 		}
+		RecordDiscordRequest(galactus.client, GuildChannels)
 		channels, err := sess.GuildChannels(guildID)
 		if err != nil {
 			errMsg := "failed to fetch guild channels"
@@ -123,6 +135,7 @@ func (galactus *GalactusAPI) GetGuildEmojisHandler() func(w http.ResponseWriter,
 			w.Write([]byte(errMsg))
 			return
 		}
+		RecordDiscordRequest(galactus.client, GuildEmojis)
 		emojis, err := sess.GuildEmojis(guildID)
 		if err != nil {
 			errMsg := "failed to fetch guild emojis"
@@ -169,6 +182,7 @@ func (galactus *GalactusAPI) GetGuildMemberHandler() func(w http.ResponseWriter,
 			w.Write([]byte(errMsg))
 			return
 		}
+		RecordDiscordRequest(galactus.client, GuildMember)
 		member, err := sess.GuildMember(guildID, userID)
 		if err != nil {
 			errMsg := "failed to fetch guild member"
@@ -218,6 +232,7 @@ func (galactus *GalactusAPI) GetGuildRolesHandler() func(w http.ResponseWriter, 
 			w.Write([]byte(errMsg))
 			return
 		}
+		RecordDiscordRequest(galactus.client, GuildRoles)
 		roles, err := sess.GuildRoles(guildID)
 		if err != nil {
 			errMsg := "failed to fetch guild roles"
@@ -283,6 +298,7 @@ func (galactus *GalactusAPI) CreateGuildEmojiHandler() func(w http.ResponseWrite
 			return
 		}
 
+		RecordDiscordRequest(galactus.client, CreateGuildEmoji)
 		emoji, err := sess.GuildEmojiCreate(guildID, name, string(body), nil)
 		if err != nil {
 			errMsg := "error creating emoji for guild"

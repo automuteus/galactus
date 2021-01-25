@@ -62,6 +62,7 @@ func NewGalactusAPI(logger *zap.Logger, botToken, topGGtoken, botID, redisAddr, 
 
 	manager := shard_manager.MakeShardManager(logger, botToken, DefaultIntents)
 	shard_manager.AddHandlers(logger, manager, rdb, botPrefix)
+	shard_manager.AddRateLimitHandler(manager, RateLimitHandler(logger, rdb))
 
 	var topgg *dbl.Client = nil
 	if topGGtoken != "" {
@@ -162,6 +163,8 @@ type JobsNumber struct {
 func (galactus *GalactusAPI) Run(port string, maxWorkers int, captureAckTimeout time.Duration, taskTimeout time.Duration) {
 
 	galactus.loadTokensFromEnv()
+
+	go PrometheusMetricsServer(galactus.client, "2112")
 
 	// TODO maybe eventually provide some auth parameter, or version number? Something to prove that a worker can pop requests?
 	mainRouter := mux.NewRouter()

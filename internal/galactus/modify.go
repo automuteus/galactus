@@ -121,7 +121,6 @@ func (galactus *GalactusAPI) modifyUserHandler(maxWorkers int, taskTimeout time.
 		close(tasksChannel)
 
 		w.WriteHeader(http.StatusOK)
-
 		jbytes, err := json.Marshal(mdsc)
 		if err != nil {
 			galactus.logger.Error("failed to marshal mutedeafensuccesscounts to JSON",
@@ -133,5 +132,8 @@ func (galactus *GalactusAPI) modifyUserHandler(maxWorkers int, taskTimeout time.
 					zap.Error(err))
 			}
 		}
+		RecordDiscordRequests(galactus.client, MuteDeafenOfficial, mdsc.Official)
+		RecordDiscordRequests(galactus.client, MuteDeafenWorker, mdsc.Worker)
+		RecordDiscordRequests(galactus.client, MuteDeafenCapture, mdsc.Capture)
 	}
 }

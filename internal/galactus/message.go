@@ -2,6 +2,7 @@ package galactus
 
 import (
 	"encoding/json"
+	"github.com/automuteus/galactus/internal/redis"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
 	"github.com/bwmarrin/discordgo"
@@ -41,6 +42,7 @@ func (galactus *GalactusAPI) SendChannelMessageHandler() func(w http.ResponseWri
 			return
 		}
 
+		RecordDiscordRequest(galactus.client, MessageCreate)
 		msg, err := sess.ChannelMessageSend(channelID, string(body))
 		if err != nil {
 			errMsg := "error posting message to channel"
@@ -60,6 +62,7 @@ func (galactus *GalactusAPI) SendChannelMessageHandler() func(w http.ResponseWri
 			zap.String("contents", string(body)),
 			zap.String("messageID", msg.ID),
 		)
+
 		w.WriteHeader(http.StatusOK)
 		jbytes, err := json.Marshal(msg)
 		if err != nil {
@@ -114,6 +117,7 @@ func (galactus *GalactusAPI) SendChannelMessageEmbedHandler() func(w http.Respon
 			return
 		}
 
+		RecordDiscordRequest(galactus.client, MessageEmbedCreate)
 		msg, err := sess.ChannelMessageSendEmbed(channelID, &embed)
 		if err != nil {
 			errMsg := "error posting messageEmbed to channel"
@@ -133,6 +137,7 @@ func (galactus *GalactusAPI) SendChannelMessageEmbedHandler() func(w http.Respon
 			zap.String("contents", string(body)),
 			zap.String("messageID", msg.ID),
 		)
+
 		w.WriteHeader(http.StatusOK)
 		jbytes, err := json.Marshal(msg)
 		if err != nil {
@@ -176,6 +181,21 @@ func (galactus *GalactusAPI) EditMessageEmbedHandler() func(w http.ResponseWrite
 			return
 		}
 
+		unique, err := redis.IsEmbedEditUnique(galactus.client, channelID, messageID, &embed)
+		if err != nil {
+			galactus.logger.Error("error when checking editEmbed uniqueness",
+				zap.Error(err),
+			)
+		}
+		if !unique {
+			galactus.logger.Info("hash of message embed matched previous value - not editing message for the same contents",
+				zap.String("channelID", channelID),
+				zap.String("messageID", messageID),
+			)
+			w.WriteHeader(http.StatusAlreadyReported)
+			return
+		}
+
 		// TODO perform some validation on the message body?
 		// ex message length, empty contents, etc
 
@@ -187,6 +207,7 @@ func (galactus *GalactusAPI) EditMessageEmbedHandler() func(w http.ResponseWrite
 			w.Write([]byte(errMsg))
 			return
 		}
+		RecordDiscordRequest(galactus.client, MessageEmbedEdit)
 		msg, err := sess.ChannelMessageEditEmbed(channelID, messageID, &embed)
 		if err != nil {
 			errMsg := "error editing message in channel"
@@ -235,6 +256,7 @@ func (galactus *GalactusAPI) DeleteChannelMessageHandler() func(w http.ResponseW
 			w.Write([]byte(errMsg))
 			return
 		}
+		RecordDiscordRequest(galactus.client, MessageDelete)
 		err := sess.ChannelMessageDelete(channelID, messageID)
 		if err != nil {
 			errMsg := "error deleting message in channel"
@@ -253,6 +275,7 @@ func (galactus *GalactusAPI) DeleteChannelMessageHandler() func(w http.ResponseW
 			zap.String("channelID", channelID),
 			zap.String("messageID", messageID),
 		)
+
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(messageID))
 	}

@@ -23,6 +23,7 @@ func (galactus *GalactusAPI) CreateUserChannelHandler() func(w http.ResponseWrit
 			w.Write([]byte(errMsg))
 			return
 		}
+		RecordDiscordRequest(galactus.client, UserChannel)
 		channel, err := sess.UserChannelCreate(userID)
 		if err != nil {
 			errMsg := "failed to create user channel"

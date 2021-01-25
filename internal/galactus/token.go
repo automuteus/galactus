@@ -6,7 +6,6 @@ import (
 	"github.com/automuteus/utils/pkg/discord"
 	"github.com/automuteus/utils/pkg/rediskey"
 	"go.uber.org/zap"
-	"log"
 	"time"
 )
 
@@ -67,24 +66,29 @@ func (galactus *GalactusAPI) attemptOnCaptureBot(guildID, connectCode string, gi
 
 		err := redis.PushCaptureClientTask(galactus.client, connectCode, taskObj, timeout)
 		if err != nil {
-			log.Println("Error in pushing task to " + rediskey.TasksList(connectCode))
-			log.Println(err)
+			galactus.logger.Error("error pushing capture client task",
+				zap.Error(err),
+				zap.String("key", rediskey.TasksList(connectCode)))
 		} else {
 			go galactus.waitForAck(pubsub, timeout, acked)
 			res := <-acked
 			if res {
-				log.Println("Successful mute/deafen using client capture bot!")
-
+				galactus.logger.Info("successful mute/deafen using client capture bot",
+					zap.String("taskID", taskObj.TaskID),
+				)
 				// hooray! we did the mute with a client token!
 				return true
 			}
 			err := galactus.BlacklistTokenForDuration(guildID, connectCode, UnresponsiveCaptureBlacklistDuration)
 			if err == nil {
-				log.Printf("No ack from capture clients; blacklisting capture client for gamecode \"%s\" for %s\n", connectCode, UnresponsiveCaptureBlacklistDuration.String())
+				galactus.logger.Info("no ack from capture clients. Not using capture client for a time period",
+					zap.String("connectCode", connectCode),
+					zap.String("duration", UnresponsiveCaptureBlacklistDuration.String()),
+				)
 			}
 		}
 	} else {
-		log.Println("Capture client is probably rate-limited. Deferring to main bot instead")
+		galactus.logger.Info("capture client likely rate-limited or refusing tasks. Using main bot instead")
 	}
 	return false
 }

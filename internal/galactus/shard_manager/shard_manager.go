@@ -47,6 +47,8 @@ func AddHandlers(logger *zap.Logger, manager *dshardmanager.Manager, client *red
 	manager.AddHandler(handler.VoiceStateUpdateHandler(logger, client))
 	manager.AddHandler(handler.MessageCreateHandler(logger, client, botPrefix))
 	manager.AddHandler(handler.MessageReactionAddHandler(logger, client))
+}
 
-	manager.AddHandler(handler.RateLimitHandler(logger, client))
+func AddRateLimitHandler(manager *dshardmanager.Manager, handler func(sess *discordgo.Session, rl *discordgo.RateLimit)) {
+	manager.AddHandler(handler)
 }

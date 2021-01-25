@@ -53,7 +53,7 @@ func (galactus *GalactusClient) GetCaptureEvent(connectCode string) (*capture.Ev
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		err := errors.New("non-200 response code received for " + url)
 		return nil, err
 	}
@@ -94,7 +94,7 @@ func (galactus *GalactusClient) GetCaptureTask(ctx context.Context, connectCode 
 		return nil, err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		err := errors.New("non-200 response code received for " + url)
 		return nil, err
 	}

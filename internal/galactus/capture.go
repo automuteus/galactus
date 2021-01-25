@@ -96,6 +96,7 @@ func (galactus *GalactusAPI) GetCaptureEventHandler(timeout time.Duration) func(
 			return
 		}
 
+		w.WriteHeader(http.StatusOK)
 		_, err = w.Write([]byte(msg))
 		if err != nil {
 			galactus.logger.Error("failed to write capture event as HTTP response",
@@ -108,7 +109,6 @@ func (galactus *GalactusAPI) GetCaptureEventHandler(timeout time.Duration) func(
 			zap.String("connectCode", connectCode),
 			zap.String("event", msg),
 		)
-		w.WriteHeader(http.StatusOK)
 	}
 }
 

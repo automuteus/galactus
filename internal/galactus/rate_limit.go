@@ -1,4 +1,4 @@
-package handler
+package galactus
 
 import (
 	"github.com/bwmarrin/discordgo"
@@ -12,5 +12,6 @@ func RateLimitHandler(logger *zap.Logger, client *redis.Client) func(sess *disco
 			zap.String("message", rl.Message),
 			zap.String("url", rl.URL),
 		)
+		RecordDiscordRequest(client, InvalidRequest)
 	}
 }

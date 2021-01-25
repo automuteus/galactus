@@ -119,7 +119,7 @@ func main() {
 		zap.String("BOT_ID", botID),
 	)
 
-	tp := galactus.NewGalactusAPI(logger, botToken, topGGToken, botID, redisAddr, redisUser, redisPass, maxReq, botToken)
+	tp := galactus.NewGalactusAPI(logger, botToken, topGGToken, botID, redisAddr, redisUser, redisPass, maxReq, botPrefix)
 
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)

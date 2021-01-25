@@ -28,6 +28,7 @@ func (galactus *GalactusAPI) AddReactionHandler() func(w http.ResponseWriter, r 
 			w.Write([]byte(errMsg))
 			return
 		}
+		RecordDiscordRequest(galactus.client, ReactionAdd)
 		err := sess.MessageReactionAdd(channelID, messageID, emojiID)
 		if err != nil {
 			errMsg := "failed to addReaction"
@@ -83,6 +84,8 @@ func (galactus *GalactusAPI) RemoveReactionHandler() func(w http.ResponseWriter,
 			w.Write([]byte(errMsg))
 			return
 		}
+
+		RecordDiscordRequest(galactus.client, ReactionRemove)
 		err = sess.MessageReactionRemove(channelID, messageID, emojiID, userID)
 		if err != nil {
 			errMsg := "failed to removeReaction"
@@ -123,6 +126,8 @@ func (galactus *GalactusAPI) RemoveAllReactionsHandler() func(w http.ResponseWri
 			w.Write([]byte(errMsg))
 			return
 		}
+
+		RecordDiscordRequest(galactus.client, ReactionRemoveAll)
 		err := sess.MessageReactionsRemoveAll(channelID, messageID)
 		if err != nil {
 			errMsg := "failed to remove all reactions"
