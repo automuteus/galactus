@@ -142,6 +142,7 @@ func (galactus *GalactusAPI) GetCaptureTaskHandler(taskTimeout time.Duration) fu
 			return
 		}
 
+		w.WriteHeader(http.StatusOK)
 		_, err = w.Write([]byte(msg))
 		if err != nil {
 			galactus.logger.Error("failed to write capture task as HTTP response",
@@ -154,7 +155,6 @@ func (galactus *GalactusAPI) GetCaptureTaskHandler(taskTimeout time.Duration) fu
 			zap.String("connectCode", connectCode),
 			zap.String("task", msg),
 		)
-		w.WriteHeader(http.StatusOK)
 	}
 }
 
