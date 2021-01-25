@@ -16,6 +16,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
 	"github.com/jonas747/dshardmanager"
+	"github.com/top-gg/go-dbl"
 	"go.uber.org/zap"
 	"net/http"
 	"os"
@@ -38,6 +39,8 @@ var DefaultIntents = discordgo.MakeIntent(discordgo.IntentsGuildVoiceStates | di
 type GalactusAPI struct {
 	client       *redis.Client
 	shardManager *dshardmanager.Manager
+	topggClient  *dbl.Client
+	botID        string
 
 	// maps hashed tokens to active discord sessions
 	activeSessions      map[string]*discordgo.Session
@@ -47,7 +50,7 @@ type GalactusAPI struct {
 	logger *zap.Logger
 }
 
-func NewGalactusAPI(logger *zap.Logger, botToken, redisAddr, redisUser, redisPass string, maxReq int64, botPrefix string) *GalactusAPI {
+func NewGalactusAPI(logger *zap.Logger, botToken, topGGtoken, botID, redisAddr, redisUser, redisPass string, maxReq int64, botPrefix string) *GalactusAPI {
 	var rdb *redis.Client
 
 	rdb = redis.NewClient(&redis.Options{
@@ -60,9 +63,16 @@ func NewGalactusAPI(logger *zap.Logger, botToken, redisAddr, redisUser, redisPas
 	manager := shard_manager.MakeShardManager(logger, botToken, DefaultIntents)
 	shard_manager.AddHandlers(logger, manager, rdb, botPrefix)
 
+	var topgg *dbl.Client = nil
+	if topGGtoken != "" {
+		topgg, _ = dbl.NewClient(topGGtoken)
+	}
+
 	return &GalactusAPI{
 		client:              rdb,
 		shardManager:        manager,
+		topggClient:         topgg,
+		botID:               botID,
 		activeSessions:      make(map[string]*discordgo.Session),
 		maxRequests5Seconds: maxReq,
 		sessionLock:         sync.RWMutex{},

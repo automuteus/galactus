@@ -18,6 +18,7 @@ const DefaultMaxWorkers = 8
 const DefaultCaptureBotTimeout = time.Second
 const DefaultTaskTimeout = time.Second * 10
 const DefaultBotPrefix = ".au"
+const DefaultBotID = "753795015830011944" // Official AutoMuteUs bot ID
 
 func main() {
 	logger, err := zap.NewProduction()
@@ -95,6 +96,16 @@ func main() {
 		botPrefix = os.Getenv("AUTOMUTEUS_GLOBAL_PREFIX")
 	}
 
+	topGGToken := ""
+	if os.Getenv("TOP_GG_TOKEN") != "" {
+		topGGToken = os.Getenv("TOP_GG_TOKEN")
+	}
+
+	botID := DefaultBotID
+	if os.Getenv("BOT_ID") != "" {
+		botID = os.Getenv("BOT_ID")
+	}
+
 	logger.Info("loaded env",
 		zap.String("DISCORD_BOT_TOKEN", botToken),
 		zap.String("REDIS_ADDR", redisAddr),
@@ -104,9 +115,11 @@ func main() {
 		zap.Int("MAX_WORKERS", maxWorkers),
 		zap.Int64("ACK_TIMEOUT_MS", captureAckTimeout.Milliseconds()),
 		zap.String("AUTOMUTEUS_GLOBAL_PREFIX", botPrefix),
+		zap.String("TOP_GG_TOKEN", topGGToken),
+		zap.String("BOT_ID", botID),
 	)
 
-	tp := galactus.NewGalactusAPI(logger, botToken, redisAddr, redisUser, redisPass, maxReq, botToken)
+	tp := galactus.NewGalactusAPI(logger, botToken, topGGToken, botID, redisAddr, redisUser, redisPass, maxReq, botToken)
 
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
