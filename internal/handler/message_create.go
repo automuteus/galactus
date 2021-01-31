@@ -50,12 +50,10 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client, globalPrefix
 		}
 
 		if detectedPrefix == "" {
-			// TODO this is called every time a message is posted in any channel of any guild...
-			// need a more optimal store in Redis so we don't need to unmarshal an ENTIRE settings object every time
-			sett, err := redis_utils.GetSettingsFromRedis(client, m.GuildID)
-			if sett != nil && err == nil {
-				if strings.HasPrefix(m.Content, sett.CommandPrefix) {
-					detectedPrefix = sett.CommandPrefix
+			prefix, err := redis_utils.GetPrefixFromRedis(client, m.GuildID)
+			if prefix != "" && err == nil {
+				if strings.HasPrefix(m.Content, prefix) {
+					detectedPrefix = prefix
 				}
 			}
 		}

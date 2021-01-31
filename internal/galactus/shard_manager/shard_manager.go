@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func MakeShardManager(logger *zap.Logger, token string, intent *discordgo.Intent) *dshardmanager.Manager {
+func MakeShardManager(logger *zap.Logger, token string, intent discordgo.Intent) *dshardmanager.Manager {
 	manager := dshardmanager.New("Bot " + token)
 	manager.Name = "AutoMuteUs"
 

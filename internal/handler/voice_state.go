@@ -19,7 +19,7 @@ func VoiceStateUpdateHandler(logger *zap.Logger, client *redis.Client) func(s *d
 			return
 		}
 
-		// if no active games, completely ignore message reactions
+		// if no active games, completely ignore voice messages
 		if !redis_utils.AnyActiveGamesInGuild(client, m.GuildID) {
 			return
 		}
