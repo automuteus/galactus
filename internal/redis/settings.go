@@ -2,8 +2,6 @@ package redis
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"github.com/automuteus/utils/pkg/rediskey"
 	"github.com/automuteus/utils/pkg/settings"
@@ -12,7 +10,7 @@ import (
 )
 
 func GetPrefixFromRedis(client *redis.Client, guildID string) (string, error) {
-	key := rediskey.GuildPrefix(hashGuildID(guildID))
+	key := rediskey.GuildPrefix(rediskey.HashGuildID(guildID))
 	str, err := client.Get(context.Background(), key).Result()
 	if err != nil {
 		sett, err := GetSettingsFromRedis(client, guildID)
@@ -27,7 +25,7 @@ func GetPrefixFromRedis(client *redis.Client, guildID string) (string, error) {
 
 func GetSettingsFromRedis(client *redis.Client, guildID string) (*settings.GuildSettings, error) {
 	var sett settings.GuildSettings
-	key := rediskey.GuildSettings(hashGuildID(guildID))
+	key := rediskey.GuildSettings(rediskey.HashGuildID(guildID))
 
 	str, err := client.Get(context.Background(), key).Result()
 	if err != nil {
@@ -38,14 +36,4 @@ func GetSettingsFromRedis(client *redis.Client, guildID string) (*settings.Guild
 		return nil, err
 	}
 	return &sett, nil
-}
-
-func hashGuildID(guildID string) string {
-	return genericHash(guildID)
-}
-
-func genericHash(s string) string {
-	h := sha256.New()
-	h.Write([]byte(s))
-	return hex.EncodeToString(h.Sum(nil))
 }

@@ -4,7 +4,7 @@ go 1.15
 
 require (
 	github.com/alicebob/miniredis/v2 v2.14.1
-	github.com/automuteus/utils v0.0.10
+	github.com/automuteus/utils v0.0.11
 	github.com/bsm/redislock v0.7.0
 	github.com/bwmarrin/discordgo v0.23.1
 	github.com/go-redis/redis/v8 v8.4.2
@@ -16,6 +16,3 @@ require (
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.16.0
 )
-
-// TODO replace when V7 comes out
-replace github.com/automuteus/utils v0.0.10 => github.com/automuteus/utils v0.0.11-0.20210117090606-d48d8a0c6a4b

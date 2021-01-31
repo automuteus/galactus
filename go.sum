@@ -24,8 +24,8 @@ github.com/armon/circbuf v0.0.0-20150827004946-bbbad097214e/go.mod h1:3U/XgcO3hC
 github.com/armon/go-metrics v0.0.0-20180917152333-f0300d1749da/go.mod h1:Q73ZrmVTwzkszR9V5SSuryQ31EELlFMUz1kKyl939pY=
 github.com/armon/go-radix v0.0.0-20180808171621-7fddfc383310/go.mod h1:ufUuZ+zHj4x4TnLV4JWEpy2hxWSpsRywHrMgIH9cCH8=
 github.com/aryann/difflib v0.0.0-20170710044230-e206f873d14a/go.mod h1:DAHtR1m6lCRdSC2Tm3DSWRPvIPr6xNKyeHdqDQSQT+A=
-github.com/automuteus/utils v0.0.11-0.20210117090606-d48d8a0c6a4b h1:5WCoZsyNqCvAQQ3Sr4Xgb90IFzMZooXA/VgWJ03OHEU=
-github.com/automuteus/utils v0.0.11-0.20210117090606-d48d8a0c6a4b/go.mod h1:rCHtrQ3nNXdagcOKW8Mcr4wAW3CaXyB1aArsdMtXS30=
+github.com/automuteus/utils v0.0.11 h1:0AE++H2xawEDxZGMg8iZm61R6QQdbgrTx7EYXlGSfzo=
+github.com/automuteus/utils v0.0.11/go.mod h1:rCHtrQ3nNXdagcOKW8Mcr4wAW3CaXyB1aArsdMtXS30=
 github.com/aws/aws-lambda-go v1.13.3/go.mod h1:4UKl9IzQMoD+QF79YdCuzCwp8VbmG4VAQwij/eHl5CU=
 github.com/aws/aws-sdk-go v1.27.0/go.mod h1:KmX6BPdI08NWTb3/sm4ZGu5ShLoqVDhKgpiN924inxo=
 github.com/aws/aws-sdk-go-v2 v0.18.0/go.mod h1:JWVYvqSMppoMJC0x5wdwiImzgXTI9FuZwxzkQq9wy+g=
@@ -37,8 +37,6 @@ github.com/bgentry/speakeasy v0.1.0/go.mod h1:+zsyZBPWlz7T6j88CTgSN5bM796AkVf0kB
 github.com/bsm/redislock v0.7.0 h1:RL7aZJhCKkuBjQbnSTKCeedTRifBWxd/ffP+GZ599Mo=
 github.com/bsm/redislock v0.7.0/go.mod h1:3Kgu+cXw0JrkZ5pmY/JbcFpixGZ5M9v9G2PGWYqku+k=
 github.com/bwmarrin/discordgo v0.22.0/go.mod h1:c1WtWUGN6nREDmzIpyTp/iD3VYt4Fpx+bVyfBG7JE+M=
-github.com/bwmarrin/discordgo v0.22.1 h1:254fNYyfqJWKbPzO5g8j/nUvRgj4dNlI19EB8rnkpt8=
-github.com/bwmarrin/discordgo v0.22.1/go.mod h1:c1WtWUGN6nREDmzIpyTp/iD3VYt4Fpx+bVyfBG7JE+M=
 github.com/bwmarrin/discordgo v0.23.1 h1:xlK4/69bpl/VSoCYaKe3BOc9j1HkNopoRdCppRYu8dk=
 github.com/bwmarrin/discordgo v0.23.1/go.mod h1:c1WtWUGN6nREDmzIpyTp/iD3VYt4Fpx+bVyfBG7JE+M=
 github.com/casbin/casbin/v2 v2.1.2/go.mod h1:YcPU1XXisHhLzuxH9coDNf2FbKpjGlbCg3n9yuLkIJQ=
