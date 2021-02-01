@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 	"io/ioutil"
 	"net/http"
+	"time"
 )
 
 func (galactus *GalactusClient) SendChannelMessage(channelID string, message string) (*discordgo.Message, error) {
@@ -113,4 +114,15 @@ func (galactus *GalactusClient) DeleteChannelMessage(channelID, messageID string
 		return err
 	}
 	return nil
+}
+
+func (galactus *GalactusClient) SendAndDeleteMessage(channelID string, message string, timeout time.Duration) error {
+	msg, err := galactus.SendChannelMessage(channelID, message)
+	if err != nil {
+		return err
+	}
+
+	time.Sleep(timeout)
+
+	return galactus.DeleteChannelMessage(channelID, msg.ID)
 }
