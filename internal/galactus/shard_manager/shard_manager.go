@@ -8,7 +8,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func MakeShardManager(logger *zap.Logger, token string, intent discordgo.Intent) *dshardmanager.Manager {
+func MakeShardManager(logger *zap.Logger, token string, numShards int, intent discordgo.Intent) *dshardmanager.Manager {
 	manager := dshardmanager.New("Bot " + token)
 	manager.Name = "AutoMuteUs"
 
@@ -17,8 +17,15 @@ func MakeShardManager(logger *zap.Logger, token string, intent discordgo.Intent)
 		logger.Fatal("failed to obtain recommended shard count",
 			zap.Error(err))
 	}
-
-	manager.SetNumShards(recommended)
+	if numShards > 0 {
+		logger.Info("obtained recommended number of shards, but using provided value instead",
+			zap.Int("recommended", recommended),
+			zap.Int("NUM_SHARDS", numShards),
+		)
+		manager.SetNumShards(numShards)
+	} else {
+		manager.SetNumShards(recommended)
+	}
 
 	logger.Info("starting shard manager",
 		zap.Int("num shards", manager.GetNumShards()))

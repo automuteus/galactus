@@ -106,6 +106,18 @@ func main() {
 		botID = os.Getenv("BOT_ID")
 	}
 
+	numShards := -1
+	if os.Getenv("NUM_SHARDS") != "" {
+		num, err := strconv.ParseInt(os.Getenv("NUM_SHARDS"), 10, 64)
+		if err != nil {
+			logger.Error("could not parse NUM_SHARDS. Will use Discord-recommended value instead",
+				zap.Error(err),
+			)
+		} else {
+			numShards = int(num)
+		}
+	}
+
 	logger.Info("loaded env",
 		zap.String("DISCORD_BOT_TOKEN", botToken),
 		zap.String("REDIS_ADDR", redisAddr),
@@ -117,9 +129,10 @@ func main() {
 		zap.String("AUTOMUTEUS_GLOBAL_PREFIX", botPrefix),
 		zap.String("TOP_GG_TOKEN", topGGToken),
 		zap.String("BOT_ID", botID),
+		zap.Int("NUM_SHARDS", numShards),
 	)
 
-	tp := galactus.NewGalactusAPI(logger, botToken, topGGToken, botID, redisAddr, redisUser, redisPass, maxReq, botPrefix)
+	tp := galactus.NewGalactusAPI(logger, botToken, numShards, topGGToken, botID, redisAddr, redisUser, redisPass, maxReq, botPrefix)
 
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)

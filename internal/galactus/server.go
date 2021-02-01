@@ -50,7 +50,7 @@ type GalactusAPI struct {
 	logger *zap.Logger
 }
 
-func NewGalactusAPI(logger *zap.Logger, botToken, topGGtoken, botID, redisAddr, redisUser, redisPass string, maxReq int64, botPrefix string) *GalactusAPI {
+func NewGalactusAPI(logger *zap.Logger, botToken string, numShards int, topGGtoken, botID, redisAddr, redisUser, redisPass string, maxReq int64, botPrefix string) *GalactusAPI {
 	var rdb *redis.Client
 
 	rdb = redis.NewClient(&redis.Options{
@@ -60,7 +60,7 @@ func NewGalactusAPI(logger *zap.Logger, botToken, topGGtoken, botID, redisAddr, 
 		DB:       0, // use default DB
 	})
 
-	manager := shard_manager.MakeShardManager(logger, botToken, DefaultIntents)
+	manager := shard_manager.MakeShardManager(logger, botToken, numShards, DefaultIntents)
 	shard_manager.AddHandlers(logger, manager, rdb, botPrefix)
 	shard_manager.AddRateLimitHandler(manager, RateLimitHandler(logger, rdb))
 
