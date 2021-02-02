@@ -25,7 +25,7 @@ func GuildDeleteHandler(logger *zap.Logger, client *redis.Client, locker *redsyn
 				zap.String("snowflakeID", m.ID+"_delete"))
 			return
 		}
-		defer snowflakeMutex.Unlock()
+		// explicitly DO NOT unlock the snowflake! We don't want anyone else processing the event!
 
 		byt, err := json.Marshal(m)
 		if err != nil {

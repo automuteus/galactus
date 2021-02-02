@@ -34,7 +34,7 @@ func MessageReactionAddHandler(logger *zap.Logger, client *redis.Client, locker 
 				zap.String("snowflakeID", m.MessageID+m.Emoji.ID+m.UserID))
 			return
 		}
-		defer snowflakeMutex.Unlock()
+		// explicitly DO NOT unlock the snowflake! We don't want anyone else processing the event!
 
 		// if no active games in this text channel, completely ignore this message reaction message
 		res, err := client.Exists(context.Background(), rediskey.TextChannelPtr(m.GuildID, m.ChannelID)).Result()

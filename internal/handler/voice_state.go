@@ -30,7 +30,7 @@ func VoiceStateUpdateHandler(logger *zap.Logger, client *redis.Client, locker *r
 				zap.String("snowflakeID", id))
 			return
 		}
-		defer snowflakeMutex.Unlock()
+		// explicitly DO NOT unlock the snowflake! We don't want anyone else processing the event!
 
 		// if no active games, completely ignore voice messages
 		if !redis_utils.AnyActiveGamesInGuild(client, m.GuildID) {

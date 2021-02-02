@@ -32,7 +32,7 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client, locker *reds
 				zap.String("snowflakeID", m.ID))
 			return
 		}
-		defer snowflakeMutex.Unlock()
+		// explicitly DO NOT unlock the snowflake! We don't want anyone else processing the event!
 
 		if redis_utils.IsUserBanned(client, m.Author.ID) {
 			logger.Info("ignoring message from softbanned user",
