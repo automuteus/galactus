@@ -1,19 +1,19 @@
 package handler
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	redis_utils "github.com/automuteus/galactus/internal/redis"
 	"github.com/automuteus/galactus/pkg/discord_message"
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-redis/redis/v8"
+	"github.com/go-redsync/redsync/v4"
 	"go.uber.org/zap"
 	"strings"
 	"time"
 )
 
-func MessageCreateHandler(logger *zap.Logger, client *redis.Client, globalPrefix string) func(s *discordgo.Session, m *discordgo.MessageCreate) {
+func MessageCreateHandler(logger *zap.Logger, client *redis.Client, locker *redsync.Redsync, globalPrefix string) func(s *discordgo.Session, m *discordgo.MessageCreate) {
 	return func(s *discordgo.Session, m *discordgo.MessageCreate) {
 		if m == nil {
 			return
@@ -23,16 +23,16 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client, globalPrefix
 			return
 		}
 
-		snowflakeLock := redis_utils.LockSnowflake(context.Background(), client, m.ID)
+		snowflakeMutex, err := redis_utils.LockSnowflake(locker, m.ID)
 		// couldn't obtain lock; bail bail bail!
-		if snowflakeLock == nil {
+		if snowflakeMutex == nil {
 			logger.Info("could not obtain snowflake lock",
 				zap.String("type", "MessageCreate"),
 				zap.Int("shard ID", s.ShardID),
 				zap.String("snowflakeID", m.ID))
 			return
 		}
-		defer snowflakeLock.Release(context.Background())
+		defer snowflakeMutex.Unlock()
 
 		if redis_utils.IsUserBanned(client, m.Author.ID) {
 			logger.Info("ignoring message from softbanned user",
@@ -68,15 +68,15 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client, globalPrefix
 			// record the violation with this call
 			if redis_utils.IncrementRateLimitExceed(client, m.Author.ID) {
 				msg, err := s.ChannelMessageSend(m.ChannelID,
-					fmt.Sprintf("%s has been spamming. I'm ignoring them for the next %f minutes.",
+					fmt.Sprintf("%s has been spamming. I'm ignoring them for the next %d minutes.",
 						discord_message.MentionByUserID(m.Author.ID),
-						redis_utils.SoftbanDuration.Minutes()))
+						int(redis_utils.SoftbanDuration.Minutes())))
 				if err != nil {
 					logger.Error("error posting ratelimit ban message",
 						zap.Error(err),
 					)
 				} else {
-					go discord_message.DeleteMessageWorker(s, msg.ChannelID, msg.ID, time.Second*3)
+					go discord_message.DeleteMessageWorker(s, msg.ChannelID, msg.ID, redis_utils.SoftbanDuration)
 				}
 				return
 			} else {

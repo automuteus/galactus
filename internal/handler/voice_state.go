@@ -6,10 +6,11 @@ import (
 	"github.com/automuteus/galactus/pkg/discord_message"
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-redis/redis/v8"
+	"github.com/go-redsync/redsync/v4"
 	"go.uber.org/zap"
 )
 
-func VoiceStateUpdateHandler(logger *zap.Logger, client *redis.Client) func(s *discordgo.Session, m *discordgo.VoiceStateUpdate) {
+func VoiceStateUpdateHandler(logger *zap.Logger, client *redis.Client, locker *redsync.Redsync) func(s *discordgo.Session, m *discordgo.VoiceStateUpdate) {
 	return func(s *discordgo.Session, m *discordgo.VoiceStateUpdate) {
 		if m == nil {
 			return
@@ -18,6 +19,18 @@ func VoiceStateUpdateHandler(logger *zap.Logger, client *redis.Client) func(s *d
 		if m.UserID == s.State.User.ID {
 			return
 		}
+
+		id := m.GuildID + m.ChannelID + m.UserID + m.SessionID
+		snowflakeMutex, err := redis_utils.LockSnowflake(locker, id)
+		// couldn't obtain lock; bail bail bail!
+		if snowflakeMutex == nil {
+			logger.Info("could not obtain snowflake lock",
+				zap.String("type", "VoiceStateUpdate"),
+				zap.Int("shard ID", s.ShardID),
+				zap.String("snowflakeID", id))
+			return
+		}
+		defer snowflakeMutex.Unlock()
 
 		// if no active games, completely ignore voice messages
 		if !redis_utils.AnyActiveGamesInGuild(client, m.GuildID) {

@@ -9,11 +9,12 @@ import (
 	"github.com/automuteus/utils/pkg/rediskey"
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-redis/redis/v8"
+	"github.com/go-redsync/redsync/v4"
 	"go.uber.org/zap"
 	"time"
 )
 
-func MessageReactionAddHandler(logger *zap.Logger, client *redis.Client) func(s *discordgo.Session, m *discordgo.MessageReactionAdd) {
+func MessageReactionAddHandler(logger *zap.Logger, client *redis.Client, locker *redsync.Redsync) func(s *discordgo.Session, m *discordgo.MessageReactionAdd) {
 	return func(s *discordgo.Session, m *discordgo.MessageReactionAdd) {
 		if m == nil {
 			return
@@ -23,6 +24,17 @@ func MessageReactionAddHandler(logger *zap.Logger, client *redis.Client) func(s 
 		if m.UserID == s.State.User.ID {
 			return
 		}
+
+		snowflakeMutex, err := redis_utils.LockSnowflake(locker, m.MessageID+m.Emoji.ID+m.UserID)
+		// couldn't obtain lock; bail bail bail!
+		if snowflakeMutex == nil {
+			logger.Info("could not obtain snowflake lock",
+				zap.String("type", "ReactionAdd"),
+				zap.Int("shard ID", s.ShardID),
+				zap.String("snowflakeID", m.MessageID+m.Emoji.ID+m.UserID))
+			return
+		}
+		defer snowflakeMutex.Unlock()
 
 		// if no active games in this text channel, completely ignore this message reaction message
 		res, err := client.Exists(context.Background(), rediskey.TextChannelPtr(m.GuildID, m.ChannelID)).Result()

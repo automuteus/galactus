@@ -36,7 +36,7 @@ func UserSoftbanCountKey(userID string) string {
 }
 
 func MarkUserRateLimit(client *redis.Client, userID, cmdType string, ttl time.Duration) {
-	err := client.Set(context.Background(), UserRateLimitGeneralKey(userID), "", GlobalUserRateLimitDuration).Err()
+	err := client.Set(context.Background(), UserRateLimitGeneralKey(userID), "true", GlobalUserRateLimitDuration).Err()
 	if err != nil {
 		log.Println(err)
 	}
@@ -97,7 +97,6 @@ func IsUserBanned(client *redis.Client, userID string) bool {
 func IsUserRateLimitedGeneral(client *redis.Client, userID string) bool {
 	v, err := client.Exists(context.Background(), UserRateLimitGeneralKey(userID)).Result()
 	if err != nil {
-		log.Println(err)
 		return false
 	}
 	return v == 1 // =1 means the user is present, and thus rate-limited
@@ -106,7 +105,6 @@ func IsUserRateLimitedGeneral(client *redis.Client, userID string) bool {
 func IsUserRateLimitedSpecific(client *redis.Client, userID string, cmdType string) bool {
 	v, err := client.Exists(context.Background(), UserRateLimitSpecificKey(userID, cmdType)).Result()
 	if err != nil {
-		log.Println(err)
 		return false
 	}
 	return v == 1 // =1 means the user is present, and thus rate-limited

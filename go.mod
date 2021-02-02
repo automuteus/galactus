@@ -5,9 +5,9 @@ go 1.15
 require (
 	github.com/alicebob/miniredis/v2 v2.14.1
 	github.com/automuteus/utils v0.0.11
-	github.com/bsm/redislock v0.7.0
 	github.com/bwmarrin/discordgo v0.23.1
 	github.com/go-redis/redis/v8 v8.4.2
+	github.com/go-redsync/redsync/v4 v4.0.4
 	github.com/gorilla/mux v1.8.0
 	github.com/gorilla/websocket v1.4.1 // indirect
 	github.com/jonas747/dshardmanager v0.0.0-20180911185241-9e4282faed43

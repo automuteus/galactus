@@ -4,6 +4,8 @@ import (
 	"github.com/automuteus/galactus/internal/handler"
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-redis/redis/v8"
+	"github.com/go-redsync/redsync/v4"
+	"github.com/go-redsync/redsync/v4/redis/goredis/v8"
 	"github.com/jonas747/dshardmanager"
 	"go.uber.org/zap"
 )
@@ -48,12 +50,15 @@ func MakeShardManager(logger *zap.Logger, token string, numShards int, intent di
 }
 
 func AddHandlers(logger *zap.Logger, manager *dshardmanager.Manager, client *redis.Client, botPrefix string) {
-	manager.AddHandler(handler.GuildCreateHandler(logger, client))
-	manager.AddHandler(handler.GuildDeleteHandler(logger, client))
+	pool := goredis.NewPool(client) // or, pool := redigo.NewPool(...)
 
-	manager.AddHandler(handler.VoiceStateUpdateHandler(logger, client))
-	manager.AddHandler(handler.MessageCreateHandler(logger, client, botPrefix))
-	manager.AddHandler(handler.MessageReactionAddHandler(logger, client))
+	locker := redsync.New(pool)
+	manager.AddHandler(handler.GuildCreateHandler(logger, client, locker))
+	manager.AddHandler(handler.GuildDeleteHandler(logger, client, locker))
+
+	manager.AddHandler(handler.VoiceStateUpdateHandler(logger, client, locker))
+	manager.AddHandler(handler.MessageCreateHandler(logger, client, locker, botPrefix))
+	manager.AddHandler(handler.MessageReactionAddHandler(logger, client, locker))
 }
 
 func AddRateLimitHandler(manager *dshardmanager.Manager, handler func(sess *discordgo.Session, rl *discordgo.RateLimit)) {
