@@ -50,7 +50,7 @@ func MakeShardManager(logger *zap.Logger, token string, numShards int, intent di
 }
 
 func AddHandlers(logger *zap.Logger, manager *dshardmanager.Manager, client *redis.Client, botPrefix string) {
-	pool := goredis.NewPool(client) // or, pool := redigo.NewPool(...)
+	pool := goredis.NewPool(client)
 
 	locker := redsync.New(pool)
 	manager.AddHandler(handler.GuildCreateHandler(logger, client, locker))
