@@ -5,16 +5,12 @@ import (
 	"encoding/json"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/utils/pkg/discord"
-	"github.com/go-redsync/redsync/v4"
 	"go.uber.org/zap"
 	"io/ioutil"
 	"net/http"
 )
 
-func (galactus *GalactusClient) ModifyUsers(guildID, connectCode string, request discord.UserModifyRequest, mutex *redsync.Mutex) *discord.MuteDeafenSuccessCounts {
-	if mutex != nil {
-		defer mutex.Unlock()
-	}
+func (galactus *GalactusClient) ModifyUsers(guildID, connectCode string, request discord.UserModifyRequest) *discord.MuteDeafenSuccessCounts {
 	url := endpoint.FormGalactusURL(galactus.Address, endpoint.DiscordRoute, endpoint.ModifyUserPartial, guildID, connectCode)
 	jBytes, err := json.Marshal(request)
 	if err != nil {
