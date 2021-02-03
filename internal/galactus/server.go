@@ -233,6 +233,7 @@ func (galactus *GalactusAPI) indexHandler() func(w http.ResponseWriter, r *http.
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length")
+		w.Header().Set("Content-Type", "application/json") //Set content type to Application/Json because we are serving json data
 
 		// default to listing active games in the last 15 mins
 		activeGames := rediskey.GetActiveGames(context.Background(), galactus.client, 900)
