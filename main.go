@@ -46,6 +46,10 @@ func main() {
 	redisUser := os.Getenv("REDIS_USER")
 	redisPass := os.Getenv("REDIS_PASS")
 
+	postgresAddr := os.Getenv("POSTGRES_ADDR")
+	postgresUser := os.Getenv("POSTGRES_USER")
+	postgresPass := os.Getenv("POSTGRES_PASS")
+
 	maxReq := DefaultMaxRequests5Sec
 	maxReq5Sec := os.Getenv("MAX_REQ_5_SEC")
 	if maxReq5Sec != "" {
@@ -123,6 +127,9 @@ func main() {
 		zap.String("REDIS_ADDR", redisAddr),
 		zap.String("REDIS_USER", redisUser),
 		zap.String("REDIS_PASS", redisPass),
+		zap.String("POSTGRES_ADDR", postgresAddr),
+		zap.String("POSTGRES_USER", postgresUser),
+		zap.String("POSTGRES_PASS", postgresPass),
 		zap.Int("MAX_REQ_5_SEC", int(maxReq)),
 		zap.Int("MAX_WORKERS", maxWorkers),
 		zap.Int64("ACK_TIMEOUT_MS", captureAckTimeout.Milliseconds()),
@@ -133,6 +140,19 @@ func main() {
 	)
 
 	tp := galactus.NewGalactusAPI(logger, botToken, numShards, topGGToken, botID, redisAddr, redisUser, redisPass, maxReq, botPrefix)
+
+	if postgresAddr != "" && postgresUser != "" {
+		err := tp.InitStorage(postgresAddr, postgresUser, postgresPass)
+		if err != nil {
+			logger.Error("error initializing storage interface",
+				zap.Error(err),
+			)
+		} else {
+			logger.Info("storage interface initialized properly")
+		}
+	} else {
+		logger.Info("Storage interface was NOT initialized (insufficient postgres details provided)")
+	}
 
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)

@@ -47,5 +47,8 @@ const UserChannelCreateFull = UserChannelCreatePartial + "{userID}"
 const GetGuildEmojisPartial = "/guild/emojis/get/"
 const GetGuildEmojisFull = GetGuildEmojisPartial + "{guildID}"
 
+const GetGuildPremiumPartial = "/guild/premium/get/"
+const GetGuildPremiumFull = GetGuildPremiumPartial + "{guildID}"
+
 const CreateGuildEmojiPartial = "/guild/emoji/create/"
 const CreateGuildEmojiFull = CreateGuildEmojiPartial + "{guildID}/{name}"

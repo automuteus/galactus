@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"github.com/automuteus/galactus/pkg/endpoint"
+	"github.com/automuteus/utils/pkg/premium"
 	"github.com/bwmarrin/discordgo"
 	"go.uber.org/zap"
 	"io/ioutil"
@@ -177,4 +178,31 @@ func (galactus *GalactusClient) GetGuildRoles(guildID string) ([]*discordgo.Role
 		return nil, err
 	}
 	return roles, nil
+}
+
+func (galactus *GalactusClient) GetGuildPremium(guildID string) (*premium.PremiumRecord, error) {
+	url := endpoint.FormGalactusURL(galactus.Address, endpoint.DiscordRoute, endpoint.GetGuildPremiumPartial, guildID)
+	resp, err := galactus.client.Post(url, "application/json", bytes.NewBufferString(""))
+	if err != nil {
+		return nil, err
+	}
+	respBytes, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		galactus.logger.Error("error reading all bytes from message body",
+			zap.Error(err),
+			zap.String("url", url),
+		)
+		return nil, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		err := errors.New("non-200 response code received for " + url)
+		return nil, err
+	}
+	var rec premium.PremiumRecord
+	err = json.Unmarshal(respBytes, &rec)
+	if err != nil {
+		return nil, err
+	}
+	return &rec, nil
 }

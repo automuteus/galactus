@@ -11,6 +11,7 @@ import (
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/utils/pkg/premium"
 	"github.com/automuteus/utils/pkg/rediskey"
+	"github.com/automuteus/utils/pkg/storage"
 	"github.com/automuteus/utils/pkg/token"
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-redis/redis/v8"
@@ -37,10 +38,11 @@ var PremiumBotConstraints = map[premium.Tier]int{
 var DefaultIntents = discordgo.MakeIntent(discordgo.IntentsGuildVoiceStates | discordgo.IntentsGuildMessages | discordgo.IntentsGuilds | discordgo.IntentsGuildMessageReactions)
 
 type GalactusAPI struct {
-	client       *redis.Client
-	shardManager *dshardmanager.Manager
-	topggClient  *dbl.Client
-	botID        string
+	client        *redis.Client
+	storageClient *storage.PsqlInterface
+	shardManager  *dshardmanager.Manager
+	topggClient   *dbl.Client
+	botID         string
 
 	// maps hashed tokens to active discord sessions
 	activeSessions      map[string]*discordgo.Session
@@ -79,6 +81,17 @@ func NewGalactusAPI(logger *zap.Logger, botToken string, numShards int, topGGtok
 		sessionLock:         sync.RWMutex{},
 		logger:              logger,
 	}
+}
+
+func (galactus *GalactusAPI) InitStorage(addr, user, pass string) error {
+	connectUrl := storage.ConstructPsqlConnectURL(addr, user, pass)
+	var storageClient = storage.PsqlInterface{}
+	err := storageClient.Init(connectUrl)
+	if err != nil {
+		return err
+	}
+	galactus.storageClient = &storageClient
+	return nil
 }
 
 func (galactus *GalactusAPI) getAllTokensForGuild(guildID string) []string {
@@ -192,6 +205,7 @@ func (galactus *GalactusAPI) Run(port string, maxWorkers int, captureAckTimeout 
 	discordRouter.HandleFunc(endpoint.RemoveAllReactionsFull, galactus.RemoveAllReactionsHandler()).Methods("POST")
 	discordRouter.HandleFunc(endpoint.UserChannelCreateFull, galactus.CreateUserChannelHandler()).Methods("POST")
 	discordRouter.HandleFunc(endpoint.GetGuildEmojisFull, galactus.GetGuildEmojisHandler()).Methods("POST")
+	discordRouter.HandleFunc(endpoint.GetGuildPremiumFull, galactus.GetGuildPremiumHandler()).Methods("POST")
 	discordRouter.HandleFunc(endpoint.CreateGuildEmojiFull, galactus.CreateGuildEmojiHandler()).Methods("POST")
 
 	settingsRouter.HandleFunc(endpoint.GetGuildAMUSettingsFull, galactus.GetGuildAMUSettings()).Methods("POST")
@@ -422,6 +436,10 @@ func (galactus *GalactusAPI) Close() {
 	}
 	galactus.activeSessions = map[string]*discordgo.Session{}
 	galactus.sessionLock.Unlock()
+
+	if galactus.storageClient != nil {
+		galactus.storageClient.Close()
+	}
 }
 
 func (galactus *GalactusAPI) newGuildHandler(hashedToken string) func(s *discordgo.Session, m *discordgo.GuildCreate) {

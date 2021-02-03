@@ -1,13 +1,17 @@
 package galactus
 
 import (
+	"context"
 	"encoding/json"
 	"github.com/automuteus/galactus/pkg/endpoint"
 	"github.com/automuteus/galactus/pkg/validate"
+	"github.com/automuteus/utils/pkg/premium"
+	"github.com/automuteus/utils/pkg/rediskey"
 	"go.uber.org/zap"
 	"io/ioutil"
 	"net/http"
 	"strconv"
+	"time"
 )
 
 func (galactus *GalactusAPI) GetGuildHandler() func(w http.ResponseWriter, r *http.Request) {
@@ -333,5 +337,78 @@ func (galactus *GalactusAPI) CreateGuildEmojiHandler() func(w http.ResponseWrite
 			zap.String("guildID", guildID),
 			zap.String("name", name),
 		)
+	}
+}
+
+const PremiumStatusExpiry = time.Hour * 6
+const FreeStatusExpiry = time.Minute
+
+func (galactus *GalactusAPI) GetGuildPremiumHandler() func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		guildID := validate.GuildIDAndRespond(galactus.logger, w, r, endpoint.GetGuildPremiumFull)
+		if guildID == "" {
+			return
+		}
+
+		key := rediskey.GuildPremiumRecord(guildID)
+		str, err := galactus.client.Get(context.Background(), key).Result()
+		if err == nil {
+			var rec premium.PremiumRecord
+			err = json.Unmarshal([]byte(str), &rec)
+			if err == nil {
+				w.WriteHeader(http.StatusOK)
+				w.Write([]byte(str))
+				return
+			}
+		}
+
+		if galactus.storageClient == nil {
+			errMsg := "storage interface has not been initialized"
+			galactus.logger.Error(errMsg)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(errMsg))
+			return
+		}
+
+		tier, days := galactus.storageClient.GetGuildPremiumStatus(guildID)
+		rec := premium.PremiumRecord{
+			Tier: tier,
+			Days: days,
+		}
+		jBytes, err := json.Marshal(rec)
+		if err != nil {
+			errMsg := "failed to marshal premium record to JSON"
+			galactus.logger.Error(errMsg)
+			w.WriteHeader(http.StatusInternalServerError)
+			w.Write([]byte(errMsg))
+			return
+		}
+
+		// queries when a user is free should be done every minute, maximum. But premium status should stick in Redis
+		// for longer; decreased load on Postgres as a whole, and faster response times for premium users
+		expiry := FreeStatusExpiry
+		if tier > premium.FreeTier {
+			expiry = PremiumStatusExpiry
+		}
+
+		err = galactus.client.Set(context.Background(), key, jBytes, expiry).Err()
+		if err != nil {
+			galactus.logger.Error("error setting premium status in Redis",
+				zap.Error(err),
+				zap.String("guildID", guildID),
+				zap.String("key", key),
+				zap.ByteString("value", jBytes),
+				zap.String("expiry", expiry.String()),
+			)
+		} else {
+			galactus.logger.Info("cached guild premium status in Redis",
+				zap.String("guildID", guildID),
+				zap.Int("tier", int(tier)),
+				zap.Int("days", days),
+				zap.String("expiry", expiry.String()),
+			)
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write(jBytes)
 	}
 }

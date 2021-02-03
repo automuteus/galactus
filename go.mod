@@ -4,7 +4,7 @@ go 1.15
 
 require (
 	github.com/alicebob/miniredis/v2 v2.14.1
-	github.com/automuteus/utils v0.0.11
+	github.com/automuteus/utils v0.0.13
 	github.com/bwmarrin/discordgo v0.23.1
 	github.com/go-redis/redis/v8 v8.4.2
 	github.com/go-redsync/redsync/v4 v4.0.4
