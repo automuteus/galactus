@@ -34,11 +34,15 @@ func MessageReactionAddHandler(logger *zap.Logger, client *redis.Client, locker 
 				zap.String("snowflakeID", m.MessageID+m.Emoji.ID+m.UserID))
 			return
 		}
+
+		if redis_utils.IsUserBanned(client, m.UserID) {
+			return
+		}
 		// explicitly DO NOT unlock the snowflake! We don't want anyone else processing the event!
 
 		// if no active games in this text channel, completely ignore this message reaction message
-		res, err := client.Exists(context.Background(), rediskey.TextChannelPtr(m.GuildID, m.ChannelID)).Result()
-		if err != nil || res == 0 {
+		game, err := rediskey.IsGameInTextChannel(context.Background(), client, m.GuildID, m.ChannelID)
+		if err != nil || !game {
 			return
 		}
 
@@ -47,7 +51,7 @@ func MessageReactionAddHandler(logger *zap.Logger, client *redis.Client, locker 
 			// record the violation with this call
 			if redis_utils.IncrementRateLimitExceed(client, m.UserID) {
 				msg, err := s.ChannelMessageSend(m.ChannelID,
-					fmt.Sprintf("%s has been spamming. I'm ignoring them for the next %f minutes.",
+					fmt.Sprintf("%s has been spamming. I'm ignoring them for the next %d minutes.",
 						discord_message.MentionByUserID(m.UserID),
 						redis_utils.SoftbanDuration.Minutes()))
 				if err != nil {

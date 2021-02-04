@@ -19,7 +19,7 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client, locker *reds
 			return
 		}
 		// ignore messages created by the bot
-		if m.Author == nil || m.Author.ID == s.State.User.ID {
+		if m.Author == nil || m.Author.ID == s.State.User.ID || m.Author.Bot {
 			return
 		}
 
@@ -45,6 +45,8 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client, locker *reds
 		detectedPrefix := ""
 		if strings.HasPrefix(m.Content, "<@!"+s.State.User.ID+">") {
 			detectedPrefix = "<@!" + s.State.User.ID + ">"
+		} else if strings.HasPrefix(m.Content, "<@"+s.State.User.ID+">") {
+			detectedPrefix = "<@" + s.State.User.ID + ">"
 		} else if strings.HasPrefix(m.Content, globalPrefix) {
 			detectedPrefix = globalPrefix
 		}
