@@ -26,10 +26,10 @@ func MessageCreateHandler(logger *zap.Logger, client *redis.Client, locker *reds
 		snowflakeMutex, err := redis_utils.LockSnowflake(locker, m.ID)
 		// couldn't obtain lock; bail bail bail!
 		if snowflakeMutex == nil {
-			logger.Info("could not obtain snowflake lock",
-				zap.String("type", "MessageCreate"),
-				zap.Int("shard ID", s.ShardID),
-				zap.String("snowflakeID", m.ID))
+			//logger.Info("could not obtain snowflake lock",
+			//	zap.String("type", "MessageCreate"),
+			//	zap.Int("shard ID", s.ShardID),
+			//	zap.String("snowflakeID", m.ID))
 			return
 		}
 		// explicitly DO NOT unlock the snowflake! We don't want anyone else processing the event!

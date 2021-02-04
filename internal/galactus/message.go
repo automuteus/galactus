@@ -106,7 +106,16 @@ func (galactus *GalactusAPI) SendChannelMessageEmbedHandler() func(w http.Respon
 			return
 		}
 
-		// TODO extra validation here (empty embed fields and the like)
+		if !validate.ValidFields(&embed) {
+			errMsg := "embed is missing fields and is invalid"
+			galactus.logger.Error(errMsg,
+				zap.Error(err),
+				zap.String("body", string(body)),
+			)
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(errMsg + ": " + err.Error()))
+			return
+		}
 
 		sess := galactus.shardManager.Session(0)
 		if sess == nil {
