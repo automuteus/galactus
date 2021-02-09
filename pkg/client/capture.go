@@ -58,6 +58,10 @@ func (galactus *GalactusClient) GetCaptureEvent(connectCode string) (*capture.Ev
 		return nil, err
 	}
 
+	if resp.StatusCode == http.StatusAccepted {
+		return nil, nil
+	}
+
 	var event capture.Event
 	err = json.Unmarshal(respBytes, &event)
 	if err != nil {
@@ -97,6 +101,10 @@ func (galactus *GalactusClient) GetCaptureTask(ctx context.Context, connectCode 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
 		err := errors.New("non-200 response code received for " + url)
 		return nil, err
+	}
+
+	if resp.StatusCode == http.StatusAccepted {
+		return nil, nil
 	}
 
 	var task discord.ModifyTask
