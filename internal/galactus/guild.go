@@ -387,7 +387,7 @@ func (galactus *GalactusAPI) GetGuildPremiumHandler() func(w http.ResponseWriter
 		// queries when a user is free should be done every minute, maximum. But premium status should stick in Redis
 		// for longer; decreased load on Postgres as a whole, and faster response times for premium users
 		expiry := FreeStatusExpiry
-		if tier > premium.FreeTier {
+		if tier != premium.SelfHostTier && tier > premium.FreeTier {
 			expiry = PremiumStatusExpiry
 		}
 
