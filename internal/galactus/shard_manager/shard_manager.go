@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 )
 
-func MakeShardManager(logger *zap.Logger, token string, numShards int, intent discordgo.Intent) *dshardmanager.Manager {
+func MakeShardManager(logger *zap.Logger, token string, numShards int) *dshardmanager.Manager {
 	manager := dshardmanager.New("Bot " + token)
 	manager.Name = "AutoMuteUs"
 
@@ -29,23 +29,6 @@ func MakeShardManager(logger *zap.Logger, token string, numShards int, intent di
 		manager.SetNumShards(recommended)
 	}
 
-	logger.Info("starting shard manager",
-		zap.Int("num shards", manager.GetNumShards()))
-
-	err = manager.Start()
-	if err != nil {
-		logger.Fatal("failed to start shard manager",
-			zap.Error(err))
-	}
-
-	logger.Info("shard manager started successfully")
-
-	manager.Lock()
-	for _, v := range manager.Sessions {
-		v.Identify.Intents = intent
-	}
-	manager.Unlock()
-
 	return manager
 }
 
@@ -63,4 +46,23 @@ func AddHandlers(logger *zap.Logger, manager *dshardmanager.Manager, client *red
 
 func AddRateLimitHandler(manager *dshardmanager.Manager, handler func(sess *discordgo.Session, rl *discordgo.RateLimit)) {
 	manager.AddHandler(handler)
+}
+
+func Start(logger *zap.Logger, manager *dshardmanager.Manager, intent discordgo.Intent) {
+	logger.Info("starting shard manager",
+		zap.Int("num shards", manager.GetNumShards()))
+
+	err := manager.Start()
+	if err != nil {
+		logger.Fatal("failed to start shard manager",
+			zap.Error(err))
+	}
+
+	logger.Info("shard manager started successfully")
+
+	manager.Lock()
+	for _, v := range manager.Sessions {
+		v.Identify.Intents = intent
+	}
+	manager.Unlock()
 }

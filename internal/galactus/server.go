@@ -62,9 +62,10 @@ func NewGalactusAPI(logger *zap.Logger, botToken string, numShards int, topGGtok
 		DB:       0, // use default DB
 	})
 
-	manager := shard_manager.MakeShardManager(logger, botToken, numShards, DefaultIntents)
+	manager := shard_manager.MakeShardManager(logger, botToken, numShards)
 	shard_manager.AddHandlers(logger, manager, rdb, botPrefix)
 	shard_manager.AddRateLimitHandler(manager, RateLimitHandler(logger, rdb))
+	shard_manager.Start(logger, manager, DefaultIntents)
 
 	var topgg *dbl.Client = nil
 	if topGGtoken != "" {
