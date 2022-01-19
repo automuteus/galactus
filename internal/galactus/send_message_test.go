@@ -20,7 +20,7 @@ func TestGalactusAPI_SendChannelMessageHandler(t *testing.T) {
 		log.Println("Failed to initialize logger with error")
 		t.Fatal(err)
 	}
-	galactus := NewGalactusAPI(logger, true, os.Getenv("TEST_BOT_TOKEN"), "", "", "", 7)
+	galactus := NewGalactusAPI(logger, os.Getenv("TEST_BOT_TOKEN"), 0, "", "", "", "", "", 7, "")
 	defer galactus.Close()
 
 	m := mux.NewRouter()

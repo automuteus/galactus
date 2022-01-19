@@ -1,9 +1,11 @@
 package galactus_client
 
 import (
+	galactus2 "github.com/automuteus/galactus/internal/galactus"
 	"github.com/automuteus/utils/pkg/capture"
 	"go.uber.org/zap"
 	"log"
+	"os"
 	"sync"
 	"testing"
 	"time"
@@ -13,6 +15,11 @@ const TOTAL_TASKS = 10000
 
 func TestNewGalactusClientRepeatedPolling(t *testing.T) {
 	logger, _ := zap.NewProduction()
+
+	galactus := galactus2.NewGalactusAPI(logger, os.Getenv("TEST_BOT_TOKEN"), 0, "", "", "", "", "", 7, "")
+	defer galactus.Close()
+
+	go galactus.Run("5858", 1, time.Second, time.Second)
 
 	client, err := NewGalactusClient("http://localhost:5858", logger)
 	if err != nil {
@@ -39,6 +46,11 @@ func TestNewGalactusClientRepeatedPolling(t *testing.T) {
 
 func TestNewGalactusClientCapture(t *testing.T) {
 	logger, _ := zap.NewProduction()
+
+	galactus := galactus2.NewGalactusAPI(logger, os.Getenv("TEST_BOT_TOKEN"), 0, "", "", "", "", "", 7, "")
+	defer galactus.Close()
+
+	go galactus.Run("5858", 1, time.Second, time.Second)
 
 	client, err := NewGalactusClient("http://localhost:5858", logger)
 	if err != nil {

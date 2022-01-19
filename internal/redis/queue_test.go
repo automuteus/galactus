@@ -9,6 +9,7 @@ import (
 	"log"
 	"strings"
 	"testing"
+	"time"
 )
 
 const inputMsg = "{\"id\":\"0\"," +
@@ -37,7 +38,7 @@ const inputMsg = "{\"id\":\"0\"," +
 
 func TestPopEmpty(t *testing.T) {
 	client := newTestRedis()
-	msg, err := PopRawDiscordMessage(client)
+	msg, err := PopRawDiscordMessageTimeout(client, time.Second)
 
 	if msg != "" {
 		t.Fatal("non-nil message received from empty pop")
@@ -60,7 +61,7 @@ func TestPushAndPopSingle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	msg, err := PopRawDiscordMessage(client)
+	msg, err := PopRawDiscordMessageTimeout(client, time.Second)
 	if err != nil {
 		t.Fatal(err)
 	} else if msg == "" {
@@ -95,7 +96,7 @@ func TestPushAndPopMultiple(t *testing.T) {
 		log.Fatal(err)
 	}
 
-	msg, err := PopRawDiscordMessage(client)
+	msg, err := PopRawDiscordMessageTimeout(client, time.Second)
 	if err != nil {
 		log.Fatal(err)
 	} else if msg == "" {
@@ -116,7 +117,7 @@ func TestPushAndPopMultiple(t *testing.T) {
 		t.Fatal("input and output messages are not equivalent")
 	}
 
-	msg, err = PopRawDiscordMessage(client)
+	msg, err = PopRawDiscordMessageTimeout(client, time.Second)
 	if err != nil {
 		log.Fatal(err)
 	} else if msg == "" {

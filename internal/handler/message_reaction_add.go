@@ -53,7 +53,7 @@ func MessageReactionAddHandler(logger *zap.Logger, client *redis.Client, locker 
 				msg, err := s.ChannelMessageSend(m.ChannelID,
 					fmt.Sprintf("%s has been spamming. I'm ignoring them for the next %d minutes.",
 						discord_message.MentionByUserID(m.UserID),
-						redis_utils.SoftbanDuration.Minutes()))
+						int(redis_utils.SoftbanDuration.Minutes())))
 				if err != nil {
 					logger.Error("error posting ratelimit ban message",
 						zap.Error(err),

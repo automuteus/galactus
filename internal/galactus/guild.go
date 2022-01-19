@@ -321,7 +321,6 @@ func (galactus *GalactusAPI) CreateGuildEmojiHandler() func(w http.ResponseWrite
 		galactus.logger.Info("created emoji for guild",
 			zap.String("guildID", guildID),
 			zap.String("name", name),
-			zap.String("emoji", string(body)),
 			zap.String("emojiID", emoji.ID),
 		)
 		w.WriteHeader(http.StatusOK)
