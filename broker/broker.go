@@ -45,7 +45,7 @@ func NewBroker(redisAddr, redisUser, redisPass string) *Broker {
 }
 
 func (broker *Broker) TasksListener(server *socketio.Server, connectCode string, killchan <-chan bool) {
-	pubsub := broker.client.Subscribe(context.Background(), rediskey.TasksSubscribe(connectCode))
+	pubsub := broker.client.Subscribe(context.Background(), rediskey.TasksList(connectCode))
 	log.Println("Task listener OPEN for " + connectCode)
 	defer log.Println("Task listener CLOSE for " + connectCode)
 	channel := pubsub.Channel()
@@ -62,7 +62,7 @@ func (broker *Broker) TasksListener(server *socketio.Server, connectCode string,
 
 			log.Println("Broadcasting " + t.Payload + " to room " + connectCode)
 			server.BroadcastToRoom("/", connectCode, "modify", t.Payload)
-			break
+
 		case <-killchan:
 			pubsub.Close()
 			return
@@ -325,7 +325,6 @@ func (broker *Broker) AckWorker(ctx context.Context, connCode string, killChan <
 			if err != nil {
 				log.Println(err)
 			}
-			break
 		}
 	}
 }

@@ -62,7 +62,7 @@ func main() {
 	msgBroker := broker.NewBroker(redisAddr, redisUser, redisPass)
 
 	sc := make(chan os.Signal, 1)
-	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt, os.Kill)
+	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 
 	go msgBroker.Start(brokerPort)
 

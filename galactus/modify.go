@@ -46,9 +46,9 @@ func (tokenProvider *TokenProvider) attemptOnCaptureBot(guildID, connectCode str
 		acked := make(chan bool)
 		// now we wait for an ack with respect to actually performing the mute
 		pubsub := tokenProvider.client.Subscribe(context.Background(), rediskey.CompleteTask(taskObj.TaskID))
-		err = tokenProvider.client.Publish(context.Background(), rediskey.TasksSubscribe(connectCode), jBytes).Err()
+		err = tokenProvider.client.Publish(context.Background(), rediskey.TasksList(connectCode), jBytes).Err()
 		if err != nil {
-			log.Println("Error in publishing task to " + rediskey.TasksSubscribe(connectCode))
+			log.Println("Error in publishing task to " + rediskey.TasksList(connectCode))
 			log.Println(err)
 		} else {
 			go tokenProvider.waitForAck(pubsub, timeout, acked)
