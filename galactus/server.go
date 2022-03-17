@@ -251,8 +251,9 @@ func (tokenProvider *TokenProvider) Run(port string) {
 			Official:  0,
 			RateLimit: 0,
 		}
-		mdscLock := sync.Mutex{}
+		lock := sync.Mutex{}
 
+		errors := 0
 		// start a handful of workers to handle the tasks
 		for i := 0; i < maxWorkers; i++ {
 			go func() {
@@ -260,24 +261,28 @@ func (tokenProvider *TokenProvider) Run(port string) {
 					userIDStr := strconv.FormatUint(request.UserID, 10)
 					success := tokenProvider.attemptOnSecondaryTokens(guildID, userIDStr, tokens, limit, request)
 					if success {
-						mdscLock.Lock()
+						lock.Lock()
 						mdsc.Worker++
-						mdscLock.Unlock()
+						lock.Unlock()
 					} else {
 						success = tokenProvider.attemptOnCaptureBot(guildID, connectCode, gid, taskTimeoutms, request)
 						if success {
-							mdscLock.Lock()
+							lock.Lock()
 							mdsc.Capture++
-							mdscLock.Unlock()
+							lock.Unlock()
 						} else {
 							log.Printf("Applying mute=%v, deaf=%v using primary bot\n", request.Mute, request.Deaf)
 							err = task.ApplyMuteDeaf(tokenProvider.primarySession, guildID, userIDStr, request.Mute, request.Deaf)
 							if err != nil {
+								lock.Lock()
+								errors++
+								lock.Unlock()
+								log.Println("Error on primary bot:")
 								log.Println(err)
 							} else {
-								mdscLock.Lock()
+								lock.Lock()
 								mdsc.Official++
-								mdscLock.Unlock()
+								lock.Unlock()
 							}
 						}
 					}
@@ -293,7 +298,11 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		wg.Wait()
 		close(tasksChannel)
 
-		w.WriteHeader(http.StatusOK)
+		if errors > 0 {
+			w.WriteHeader(http.StatusInternalServerError)
+		} else {
+			w.WriteHeader(http.StatusOK)
+		}
 
 		jbytes, err := json.Marshal(mdsc)
 		if err != nil {
