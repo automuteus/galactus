@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"github.com/automuteus/utils/pkg/rediskey"
 	"github.com/automuteus/utils/pkg/task"
-	"github.com/bwmarrin/discordgo"
 	"log"
 	"time"
 )
@@ -18,14 +17,6 @@ func (tokenProvider *TokenProvider) attemptOnSecondaryTokens(guildID, userID str
 			if err != nil {
 				log.Println("Failed to apply mute to player with error:")
 				log.Println(err)
-
-				if err == discordgo.ErrUnauthorized {
-					log.Println("UNAUTHORIZED ERROR; bot is leaving guild " + guildID)
-					err = sess.GuildLeave(guildID)
-					if err != nil {
-						log.Println(err)
-					}
-				}
 
 				// don't attempt this token for this guild for another 5 minutes
 				err = tokenProvider.BlacklistTokenForDuration(guildID, hToken, UnresponsiveCaptureBlacklistDuration)
