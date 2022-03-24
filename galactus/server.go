@@ -12,6 +12,7 @@ import (
 	"github.com/bwmarrin/discordgo"
 	"github.com/go-redis/redis/v8"
 	"github.com/gorilla/mux"
+	"golang.org/x/exp/constraints"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -150,7 +151,7 @@ func (tokenProvider *TokenProvider) getSession(guildID string, hTokenSubset map[
 
 	for hToken, sess := range tokenProvider.activeSessions {
 		// if we have already used this token successfully, or haven't set any restrictions
-		if hTokenSubset == nil || hasEntry(hTokenSubset, hToken) {
+		if hTokenSubset == nil || mapHasEntry(hTokenSubset, hToken) {
 			// if this token isn't potentially rate-limited
 			if tokenProvider.IncrAndTestGuildTokenComboLock(guildID, hToken) {
 				return sess, hToken
@@ -163,11 +164,11 @@ func (tokenProvider *TokenProvider) getSession(guildID string, hTokenSubset map[
 	return nil, ""
 }
 
-func hasEntry(tokens map[string]struct{}, token string) bool {
-	if tokens == nil {
+func mapHasEntry[T constraints.Ordered, K any](dict map[T]K, key T) bool {
+	if dict == nil {
 		return false
 	}
-	_, ok := tokens[token]
+	_, ok := dict[key]
 	return ok
 }
 

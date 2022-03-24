@@ -26,7 +26,7 @@ func (tokenProvider *TokenProvider) verifyBotMembership(guildID string, limit in
 	i := 0
 	for hToken, sess := range tokenProvider.activeSessions {
 		// only check tokens that weren't used successfully already (obv we're members if mute/deafen was successful earlier)
-		if !hasEntry(uniqueTokensUsed, hToken) {
+		if !mapHasEntry(uniqueTokensUsed, hToken) {
 			_, err := sess.GuildMember(guildID, sess.State.User.ID)
 			if err != nil {
 				//log.Println(err)
