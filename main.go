@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 )
 
@@ -18,6 +19,12 @@ func main() {
 	botToken := os.Getenv("DISCORD_BOT_TOKEN")
 	if botToken == "" {
 		log.Fatal("No DISCORD_BOT_TOKEN specified. Exiting.")
+	}
+
+	var extraTokens []string
+	extraTokenStr := strings.ReplaceAll(os.Getenv("WORKER_BOT_TOKENS"), " ", "")
+	if extraTokenStr != "" {
+		extraTokens = strings.Split(extraTokenStr, ",")
 	}
 
 	redisAddr := os.Getenv("REDIS_ADDR")
@@ -58,8 +65,12 @@ func main() {
 	}
 
 	tp := galactus.NewTokenProvider(botToken, redisAddr, redisUser, redisPass, maxReq)
-	tp.PopulateAndStartSessions()
+	tp.PopulateAndStartSessions(extraTokens)
 	msgBroker := broker.NewBroker(redisAddr, redisUser, redisPass)
+
+	if len(extraTokens) > 0 {
+		go tp.BotVerificationWorker()
+	}
 
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)

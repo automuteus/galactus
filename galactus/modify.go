@@ -9,17 +9,23 @@ import (
 	"time"
 )
 
-func (tokenProvider *TokenProvider) attemptOnSecondaryTokens(guildID, userID string, tokens []string, limit int, request task.UserModify) bool {
-	if tokens != nil && limit > 0 {
-		sess, hToken := tokenProvider.getAnySession(guildID, tokens, limit)
+func (tokenProvider *TokenProvider) attemptOnSecondaryTokens(guildID, userID string, tokenSubset map[string]struct{}, request task.UserModify) string {
+	if len(tokenProvider.activeSessions) > 0 {
+		sess, hToken := tokenProvider.getSession(guildID, tokenSubset)
 		if sess != nil {
 			err := task.ApplyMuteDeaf(sess, guildID, userID, request.Mute, request.Deaf)
 			if err != nil {
 				log.Println("Failed to apply mute to player with error:")
 				log.Println(err)
+
+				// don't attempt this token for this guild for another 5 minutes
+				err = tokenProvider.BlacklistTokenForDuration(guildID, hToken, UnresponsiveCaptureBlacklistDuration)
+				if err != nil {
+					log.Println(err)
+				}
 			} else {
 				log.Printf("Successfully applied mute=%v, deaf=%v to User %d using secondary bot: %s\n", request.Mute, request.Deaf, request.UserID, hToken)
-				return true
+				return hToken
 			}
 		} else {
 			log.Println("No secondary bot tokens found. Trying other methods")
@@ -27,7 +33,7 @@ func (tokenProvider *TokenProvider) attemptOnSecondaryTokens(guildID, userID str
 	} else {
 		log.Println("Guild has no access to secondary bot tokens; skipping")
 	}
-	return false
+	return ""
 }
 
 func (tokenProvider *TokenProvider) attemptOnCaptureBot(guildID, connectCode string, gid uint64, timeout time.Duration, request task.UserModify) bool {

@@ -24,6 +24,9 @@ requests.
 * `REDIS_ADDR`: The location at which Redis is reachable. Redis is used for a variety of purposes within Galactus, including
 storage of temporary tokens, and, crucially, communication between the Capture connection broker and AutoMuteUs itself.
 
+### Recommended
+* `WORKER_BOT_TOKENS`: Secondary bot tokens used to fan out mute/deafen requests to avoid Discord rate limiting. Comma-separated
+
 ### Optional:
 * `GALACTUS_PORT`: The port on which Galactus will run and receive requests from AutoMuteUs. Defaults to 5858.
 * `BROKER_PORT`: The port on which the broker will listen for socket connections from capture clients. Defaults to 8123.
@@ -31,8 +34,8 @@ storage of temporary tokens, and, crucially, communication between the Capture c
 * `REDIS_PASS`: Password to authenticate with Redis, if applicable.
 
 ## **Do not provide unless you know what you're doing**:
-* `NUM_SHARDS`: Should match whatever automuteus is using
-* `SHARD_ID`: Probably just use 0
+* `NUM_SHARDS`: MUST match whatever automuteus is using
+* `SHARD_ID`: Probably just use 0, shouldn't matter
 * `MAX_REQ_5_SEC`: How many Discord API mute/deafens should be issued per token per 5 second window. Defaults to 7 (ratelimits
 returned by Discord are anywhere from [5-10]/5sec, so 7 is a decent heuristic)
 * `ACK_TIMEOUT_MS`: How many milliseconds after a Mute task is received before it times out, if no capture bot completes the task
