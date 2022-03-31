@@ -68,10 +68,6 @@ func main() {
 	tp.PopulateAndStartSessions(extraTokens)
 	msgBroker := broker.NewBroker(redisAddr, redisUser, redisPass)
 
-	if len(extraTokens) > 0 {
-		go tp.BotVerificationWorker()
-	}
-
 	sc := make(chan os.Signal, 1)
 	signal.Notify(sc, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 

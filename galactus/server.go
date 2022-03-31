@@ -41,8 +41,6 @@ type TokenProvider struct {
 	activeSessions      map[string]*discordgo.Session
 	maxRequests5Seconds int64
 	sessionLock         sync.RWMutex
-
-	botVerificationQueue chan botVerifyTask
 }
 
 func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string, maxReq int64) *TokenProvider {
@@ -78,32 +76,11 @@ func NewTokenProvider(botToken, redisAddr, redisUser, redisPass string, maxReq i
 	}
 
 	return &TokenProvider{
-		client:               rdb,
-		primarySession:       dg,
-		activeSessions:       make(map[string]*discordgo.Session),
-		maxRequests5Seconds:  maxReq,
-		sessionLock:          sync.RWMutex{},
-		botVerificationQueue: make(chan botVerifyTask),
-	}
-}
-
-func (tokenProvider *TokenProvider) BotVerificationWorker() {
-	log.Println("Premium bot verification worker started")
-	for {
-		verifyTask := <-tokenProvider.botVerificationQueue
-
-		if tokenProvider.canRunBotVerification(verifyTask.guildID) {
-			// always send nil tokens used; we can't populate this info from anywhere anyways
-			tokenProvider.verifyBotMembership(verifyTask.guildID, verifyTask.limit, nil)
-
-			err := tokenProvider.markBotVerificationLockout(verifyTask.guildID)
-			if err != nil {
-				log.Println(err)
-			}
-
-			// cheap ratelimiting; only process verifications once per second
-			time.Sleep(time.Second)
-		}
+		client:              rdb,
+		primarySession:      dg,
+		activeSessions:      make(map[string]*discordgo.Session),
+		maxRequests5Seconds: maxReq,
+		sessionLock:         sync.RWMutex{},
 	}
 }
 
@@ -346,27 +323,6 @@ func (tokenProvider *TokenProvider) Run(port string) {
 		// note, this should probably be more systematic on startup, not when a mute/deafen task comes in. But this is a
 		// context in which we already have the guildID, successful tokens, AND the premium limit...
 		go tokenProvider.verifyBotMembership(guildID, limit, uniqueTokensUsed)
-	}).Methods("POST")
-
-	r.HandleFunc("/verify/{guildID}/{premiumTier}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		guildID := vars["guildID"]
-		tierStr := vars["premiumTier"]
-		_, gerr := strconv.ParseUint(guildID, 10, 64)
-		if gerr != nil {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Invalid guildID (non-numeric) received. Query should be of the form POST `/verify/<guildID>/<premiumTier>`"))
-			return
-		}
-		tier, perr := strconv.ParseUint(tierStr, 10, 64)
-		if perr != nil || tier < 0 || tier > 5 {
-			w.WriteHeader(http.StatusBadRequest)
-			w.Write([]byte("Invalid premium tier (not [0,5]) received. Query should be of the form POST `/verify/<guildID>/<premiumTier>`"))
-			return
-		}
-		limit := PremiumBotConstraints[premium.Tier(tier)]
-		tokenProvider.enqueueBotMembershipVerifyTask(guildID, limit)
-		w.WriteHeader(http.StatusOK)
 	}).Methods("POST")
 
 	r.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {

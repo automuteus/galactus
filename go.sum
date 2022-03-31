@@ -1,6 +1,6 @@
 github.com/BurntSushi/toml v0.3.1/go.mod h1:xHWCNGjB5oqiDr8zfno3MHue2Ht5sIBksp03qcyfWMU=
-github.com/automuteus/utils v0.1.1 h1:AswW4ehRZkpPn8/1v14nDSi06ywJz2zBIK3BDsIboyk=
-github.com/automuteus/utils v0.1.1/go.mod h1:KyrQuXlRB65QWD5qP1ympRTk7RQlYBvPmklgrLgQVf0=
+github.com/automuteus/utils v0.1.2 h1:HUphbX11bR2NGJPdPb1GWR8lBtVuXcRaZ9o5LJOAl5A=
+github.com/automuteus/utils v0.1.2/go.mod h1:KyrQuXlRB65QWD5qP1ympRTk7RQlYBvPmklgrLgQVf0=
 github.com/bwmarrin/discordgo v0.24.0 h1:Gw4MYxqHdvhO99A3nXnSLy97z5pmIKHZVJ1JY5ZDPqY=
 github.com/bwmarrin/discordgo v0.24.0/go.mod h1:NJZpH+1AfhIcyQsPeuBKsUtYrRnjkyu0kIVMCHkZtRY=
 github.com/cespare/xxhash/v2 v2.1.1 h1:6MnRN8NT7+YBpUIWxHtefFZOKTAPgGjpQSxqLNn0+qY=

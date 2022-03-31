@@ -1,23 +1,8 @@
 package galactus
 
 import (
-	"context"
-	"github.com/automuteus/utils/pkg/rediskey"
 	"log"
-	"time"
 )
-
-type botVerifyTask struct {
-	guildID string
-	limit   int
-}
-
-func (tokenProvider *TokenProvider) enqueueBotMembershipVerifyTask(guildID string, limit int) {
-	tokenProvider.botVerificationQueue <- botVerifyTask{
-		guildID: guildID,
-		limit:   limit,
-	}
-}
 
 func (tokenProvider *TokenProvider) verifyBotMembership(guildID string, limit int, uniqueTokensUsed map[string]struct{}) {
 	tokenProvider.sessionLock.RLock()
@@ -45,18 +30,4 @@ func (tokenProvider *TokenProvider) verifyBotMembership(guildID string, limit in
 			}
 		}
 	}
-}
-
-func (tokenProvider *TokenProvider) canRunBotVerification(guildID string) bool {
-	v, err := tokenProvider.client.Exists(context.Background(), rediskey.GuildPremiumMembershipVerify(guildID)).Result()
-	if err != nil {
-		log.Println(err)
-		return true
-	}
-	return v != 1 // 1 = exists, therefore don't run
-}
-
-func (tokenProvider *TokenProvider) markBotVerificationLockout(guildID string) error {
-	// we only need to check the
-	return tokenProvider.client.Set(context.Background(), rediskey.GuildPremiumMembershipVerify(guildID), 1, time.Hour*24).Err()
 }

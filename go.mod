@@ -3,7 +3,7 @@ module github.com/automuteus/galactus
 go 1.18
 
 require (
-	github.com/automuteus/utils v0.1.1
+	github.com/automuteus/utils v0.1.2
 	github.com/bwmarrin/discordgo v0.24.0
 	github.com/go-redis/redis/v8 v8.4.2
 	github.com/googollee/go-socket.io v1.4.4
