@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"github.com/automuteus/utils/pkg/game"
-	"github.com/automuteus/utils/pkg/rediskey"
-	"github.com/automuteus/utils/pkg/task"
+	"github.com/automuteus/automuteus/v7/pkg/game"
+	"github.com/automuteus/automuteus/v7/pkg/rediskey"
+	"github.com/automuteus/automuteus/v7/pkg/task"
 	"github.com/go-redis/redis/v8"
 	socketio "github.com/googollee/go-socket.io"
 	"github.com/gorilla/mux"
@@ -232,82 +232,8 @@ func (broker *Broker) Start(port string) {
 
 	router := mux.NewRouter()
 	router.Handle("/socket.io/", server)
-	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		// TODO For any higher-sensitivity info in the future, this should properly identify the origin specifically
-		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length")
-
-		broker.connectionsLock.RLock()
-		activeConns := len(broker.connections)
-		broker.connectionsLock.RUnlock()
-
-		// default to listing active games in the last 15 mins
-		activeGames := rediskey.GetActiveGames(context.Background(), broker.client, 900)
-		version, commit := rediskey.GetVersionAndCommit(context.Background(), broker.client)
-		totalGuilds := rediskey.GetGuildCounter(context.Background(), broker.client)
-		totalUsers := rediskey.GetTotalUsers(context.Background(), broker.client)
-		totalGames := rediskey.GetTotalGames(context.Background(), broker.client)
-
-		data := map[string]interface{}{
-			"version":           version,
-			"commit":            commit,
-			"totalGuilds":       totalGuilds,
-			"activeConnections": activeConns,
-			"activeGames":       activeGames,
-			"totalUsers":        totalUsers,
-			"totalGames":        totalGames,
-		}
-
-		jsonBytes, err := json.Marshal(data)
-		if err != nil {
-			log.Println(err)
-		}
-		w.Write(jsonBytes)
-	})
-
-	router.HandleFunc("/lobbycode/{connectCode}", func(w http.ResponseWriter, r *http.Request) {
-		vars := mux.Vars(r)
-		conncode := vars["connectCode"]
-
-		if conncode == "" || len(conncode) != ConnectCodeLength {
-			errorResponse(w)
-			return
-		}
-
-		key, err := broker.client.Get(context.Background(), rediskey.RoomCodesForConnCode(conncode)).Result()
-		if errors.Is(err, redis.Nil) {
-			w.WriteHeader(http.StatusNotFound)
-			return
-		}
-		resp := Resp{Result: key}
-		jbytes, err := json.Marshal(resp)
-		if err != nil {
-			log.Println(err)
-			w.WriteHeader(http.StatusInternalServerError)
-		} else {
-			w.WriteHeader(http.StatusOK)
-			w.Write(jbytes)
-		}
-	})
 	log.Printf("Message broker is running on port %s...\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, router))
-}
-
-type Resp struct {
-	Result string `json:"result"`
-}
-
-func errorResponse(w http.ResponseWriter) {
-	w.WriteHeader(http.StatusBadRequest)
-	r := Resp{Result: "error"}
-	jbytes, err := json.Marshal(r)
-	if err != nil {
-		log.Println(err)
-		w.WriteHeader(http.StatusInternalServerError)
-	} else {
-		w.Write(jbytes)
-	}
 }
 
 // anytime a bot "acks", then push a notification
