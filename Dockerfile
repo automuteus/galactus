@@ -1,4 +1,4 @@
-FROM --platform=${BUILDPLATFORM} golang:1.18-alpine AS builder
+FROM --platform=${BUILDPLATFORM} golang:1.19-alpine AS builder
 ARG TARGETOS
 ARG TARGETARCH
 
@@ -43,7 +43,6 @@ COPY --from=builder /app /app
 
 # Port used for capture program to report back
 EXPOSE 8123
-EXPOSE 5858
 
 # Run the compiled binary.
 ENTRYPOINT ["/app/app"]
