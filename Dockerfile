@@ -43,7 +43,6 @@ COPY --from=builder /app /app
 
 # Port used for capture program to report back
 EXPOSE 8123
-EXPOSE 5858
 
 # Run the compiled binary.
 ENTRYPOINT ["/app/app"]

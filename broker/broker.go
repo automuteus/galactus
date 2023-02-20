@@ -231,6 +231,9 @@ func (broker *Broker) Start(port string) {
 	defer server.Close()
 
 	router := mux.NewRouter()
+	router.HandleFunc("/", func(w http.ResponseWriter, request *http.Request) {
+		w.Write([]byte("I'm Alive!"))
+	})
 	router.Handle("/socket.io/", server)
 	log.Printf("Message broker is running on port %s...\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, router))
