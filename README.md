@@ -1,4 +1,19 @@
 # galactus
+
+> **This repository is deprecated.** Galactus now lives in the main
+> [automuteus/automuteus](https://github.com/automuteus/automuteus) repository, under
+> [`cmd/galactus`](https://github.com/automuteus/automuteus/tree/master/cmd/galactus) (entrypoint) and
+> [`internal/broker`](https://github.com/automuteus/automuteus/tree/master/internal/broker) (the socket.io broker).
+> It is built and released together with the bot, under the same version tag. No further changes will be made here.
+>
+> **The Docker image has not moved.** It is still published as
+> [`automuteus/galactus`](https://hub.docker.com/r/automuteus/galactus) on Docker Hub; only the source has moved.
+> Starting with the first release cut from the merged repository (8.5.0), its tags match the bot's
+> (`automuteus/automuteus:X.Y.Z` and `automuteus/galactus:X.Y.Z` are built from the same commit).
+>
+> Please open issues and pull requests against [automuteus/automuteus](https://github.com/automuteus/automuteus).
+> Self-hosting instructions are in [automuteus/deploy](https://github.com/automuteus/deploy).
+
 The All-Knowing AutoMuteUs Socket Connection Aggregator.
 
 https://youtu.be/y8OnoxKotPQ
